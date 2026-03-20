@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ResultsView: View {
     let viewModel: ScanViewModel
+    @Environment(\.modelContext) private var modelContext
+    @State private var duplicateReviewItem: ClothingItemDTO?
 
     var body: some View {
         ScrollView {
@@ -39,10 +41,68 @@ struct ResultsView: View {
                     }
                     .padding(.top, 40)
                     .padding(.horizontal)
-                } else {
+                } else if !viewModel.visibleItems.isEmpty {
+                    // Save All button
+                    if viewModel.hasUnsavedItems {
+                        Button {
+                            viewModel.saveAllItems()
+                        } label: {
+                            Label("Save All to Wardrobe", systemImage: "square.and.arrow.down")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .padding(.horizontal)
+                    }
+
+                    if viewModel.isCheckingDuplicates {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Checking for duplicates...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // Item cards with save/dismiss controls
                     LazyVStack(spacing: 12) {
-                        ForEach(viewModel.scannedItems) { item in
-                            ClothingItemCard(item: item)
+                        ForEach(viewModel.visibleItems) { dto in
+                            VStack(spacing: 8) {
+                                ClothingItemCard(item: dto)
+
+                                // Duplicate warning
+                                if let duplicates = viewModel.duplicateResults[dto.id] {
+                                    DuplicateWarningBanner(
+                                        results: duplicates,
+                                        onReview: { duplicateReviewItem = dto }
+                                    )
+                                }
+
+                                // Save/dismiss controls
+                                if viewModel.isItemSaved(dto) {
+                                    Label("Saved to Wardrobe", systemImage: "checkmark.circle.fill")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.green)
+                                } else {
+                                    HStack(spacing: 12) {
+                                        Button {
+                                            viewModel.saveItem(dto)
+                                        } label: {
+                                            Label("Save", systemImage: "plus.circle")
+                                                .frame(maxWidth: .infinity)
+                                        }
+                                        .buttonStyle(.borderedProminent)
+
+                                        Button {
+                                            viewModel.dismissItem(dto)
+                                        } label: {
+                                            Label("Dismiss", systemImage: "xmark")
+                                                .frame(maxWidth: .infinity)
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal)
@@ -52,5 +112,22 @@ struct ResultsView: View {
         }
         .navigationTitle("Results")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            viewModel.modelContext = modelContext
+        }
+        .sheet(item: $duplicateReviewItem) { dto in
+            if let results = viewModel.duplicateResults[dto.id] {
+                DuplicateReviewSheet(
+                    scannedItem: dto,
+                    duplicates: results,
+                    onSaveAnyway: {
+                        viewModel.saveItem(dto)
+                    },
+                    onSkip: {
+                        viewModel.dismissItem(dto)
+                    }
+                )
+            }
+        }
     }
 }

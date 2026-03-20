@@ -24,6 +24,18 @@ enum AnthropicError: LocalizedError {
     }
 }
 
+struct DuplicateResult {
+    let existingItem: ClothingItem
+    let classification: DuplicateClassification
+    let explanation: String
+}
+
+enum DuplicateClassification: String, Codable {
+    case sameItem = "same_item"
+    case similar = "similar"
+    case noMatch = "no_match"
+}
+
 struct AnthropicService {
     private static let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
     private static let model = "claude-sonnet-4-20250514"
@@ -50,7 +62,9 @@ struct AnthropicService {
     If no clothing items are detected, return an empty array: []
     """
 
-    static func analyzeClothing(image: UIImage) async throws -> [ClothingItem] {
+    // MARK: - Clothing Analysis
+
+    static func analyzeClothing(image: UIImage) async throws -> [ClothingItemDTO] {
         let apiKey = try ConfigManager.apiKey()
 
         guard let jpegData = image.jpegData(compressionQuality: 0.6) else {
@@ -83,12 +97,128 @@ struct AnthropicService {
             ]
         ]
 
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw AnthropicError.decodingError("Invalid text encoding.")
+        }
+
+        let items: [ClothingItemDTO]
+        do {
+            items = try JSONDecoder().decode([ClothingItemDTO].self, from: jsonData)
+        } catch {
+            throw AnthropicError.decodingError(error.localizedDescription)
+        }
+
+        return items
+    }
+
+    // MARK: - Duplicate Detection
+
+    static func checkDuplicates(
+        scannedItem: ClothingItemDTO,
+        candidates: [ClothingItem],
+        image: UIImage
+    ) async throws -> [DuplicateResult] {
+        let apiKey = try ConfigManager.apiKey()
+
+        guard let jpegData = image.jpegData(compressionQuality: 0.6) else {
+            throw AnthropicError.invalidImage
+        }
+
+        let base64Image = jpegData.base64EncodedString()
+
+        var candidateDescriptions = ""
+        for (index, candidate) in candidates.enumerated() {
+            candidateDescriptions += """
+            [\(index)] \(candidate.type) - \(candidate.category), \(candidate.primaryColor), \
+            \(candidate.pattern), \(candidate.fabricEstimate). \(candidate.itemDescription)\n
+            """
+        }
+
+        let prompt = """
+        I just scanned a clothing item from this image. It was detected as:
+        Type: \(scannedItem.type)
+        Category: \(scannedItem.category)
+        Color: \(scannedItem.primaryColor)
+        Pattern: \(scannedItem.pattern)
+        Fabric: \(scannedItem.fabricEstimate)
+        Description: \(scannedItem.description)
+
+        I have these existing items in my wardrobe that might be the same item:
+        \(candidateDescriptions)
+
+        For each existing item, determine if it is the SAME physical item as the scanned one, \
+        just SIMILAR (same type but a different garment), or NO MATCH at all.
+
+        Return a JSON array with one object per candidate:
+        [{"index": 0, "classification": "same_item"|"similar"|"no_match", "explanation": "brief reason"}]
+
+        Return ONLY valid JSON. No markdown, no explanation, no code fences.
+        """
+
+        let requestBody: [String: Any] = [
+            "model": model,
+            "max_tokens": 1024,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "image",
+                            "source": [
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": base64Image
+                            ]
+                        ],
+                        [
+                            "type": "text",
+                            "text": prompt
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8),
+              let rawArray = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]]
+        else {
+            return []
+        }
+
+        var results: [DuplicateResult] = []
+        for entry in rawArray {
+            guard let index = entry["index"] as? Int,
+                  let classStr = entry["classification"] as? String,
+                  let classification = DuplicateClassification(rawValue: classStr),
+                  let explanation = entry["explanation"] as? String,
+                  index < candidates.count
+            else { continue }
+
+            results.append(DuplicateResult(
+                existingItem: candidates[index],
+                classification: classification,
+                explanation: explanation
+            ))
+        }
+
+        return results
+    }
+
+    // MARK: - Helpers
+
+    private static func sendRequest(body: [String: Any], apiKey: String) async throws -> String {
         var request = URLRequest(url: apiURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let data: Data
         let response: URLResponse
@@ -99,8 +229,8 @@ struct AnthropicService {
         }
 
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-            let body = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw AnthropicError.apiError(httpResponse.statusCode, body)
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AnthropicError.apiError(httpResponse.statusCode, responseBody)
         }
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -111,20 +241,7 @@ struct AnthropicService {
             throw AnthropicError.decodingError("Unexpected response structure.")
         }
 
-        let cleanedText = stripCodeFences(text)
-
-        guard let jsonData = cleanedText.data(using: .utf8) else {
-            throw AnthropicError.decodingError("Invalid text encoding.")
-        }
-
-        let items: [ClothingItem]
-        do {
-            items = try JSONDecoder().decode([ClothingItem].self, from: jsonData)
-        } catch {
-            throw AnthropicError.decodingError(error.localizedDescription)
-        }
-
-        return items
+        return text
     }
 
     private static func stripCodeFences(_ text: String) -> String {

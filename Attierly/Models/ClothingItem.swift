@@ -1,42 +1,85 @@
 import Foundation
+import SwiftData
 
-struct ClothingItem: Codable, Identifiable {
-    let id: UUID
-    let type: String
-    let category: String
-    let primaryColor: String
-    let secondaryColor: String?
-    let pattern: String
-    let fabricEstimate: String
-    let weight: String
-    let formality: String
-    let season: [String]
-    let fit: String?
-    let statementLevel: String
-    let description: String
+@Model
+final class ClothingItem {
+    @Attribute(.unique) var id: UUID
 
-    enum CodingKeys: String, CodingKey {
-        case type, category, pattern, weight, formality, season, fit, description
-        case primaryColor = "primary_color"
-        case secondaryColor = "secondary_color"
-        case fabricEstimate = "fabric_estimate"
-        case statementLevel = "statement_level"
+    // AI-detected fields (user-editable)
+    var type: String
+    var category: String
+    var primaryColor: String
+    var secondaryColor: String?
+    var pattern: String
+    var fabricEstimate: String
+    var weight: String
+    var formality: String
+    var season: [String]
+    var fit: String?
+    var statementLevel: String
+    var itemDescription: String
+
+    // User-added fields
+    var brand: String?
+    var notes: String?
+
+    // Image paths (relative to Documents directory)
+    var imagePath: String?
+    var sourceImagePath: String?
+
+    // Metadata
+    var createdAt: Date
+    var updatedAt: Date
+
+    // Original AI values stored as JSON for reference when editing
+    var aiOriginalValues: String?
+
+    // Relationships
+    var scanSession: ScanSession?
+
+    init(from dto: ClothingItemDTO, sourceImagePath: String? = nil) {
+        self.id = dto.id
+        self.type = dto.type
+        self.category = dto.category
+        self.primaryColor = dto.primaryColor
+        self.secondaryColor = dto.secondaryColor
+        self.pattern = dto.pattern
+        self.fabricEstimate = dto.fabricEstimate
+        self.weight = dto.weight
+        self.formality = dto.formality
+        self.season = dto.season
+        self.fit = dto.fit
+        self.statementLevel = dto.statementLevel
+        self.itemDescription = dto.description
+        self.sourceImagePath = sourceImagePath
+        self.createdAt = Date()
+        self.updatedAt = Date()
+        self.aiOriginalValues = Self.encodeOriginalValues(dto)
     }
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = UUID()
-        self.type = try container.decode(String.self, forKey: .type)
-        self.category = try container.decode(String.self, forKey: .category)
-        self.primaryColor = try container.decode(String.self, forKey: .primaryColor)
-        self.secondaryColor = try container.decodeIfPresent(String.self, forKey: .secondaryColor)
-        self.pattern = try container.decode(String.self, forKey: .pattern)
-        self.fabricEstimate = try container.decode(String.self, forKey: .fabricEstimate)
-        self.weight = try container.decode(String.self, forKey: .weight)
-        self.formality = try container.decode(String.self, forKey: .formality)
-        self.season = try container.decode([String].self, forKey: .season)
-        self.fit = try container.decodeIfPresent(String.self, forKey: .fit)
-        self.statementLevel = try container.decode(String.self, forKey: .statementLevel)
-        self.description = try container.decode(String.self, forKey: .description)
+    func originalAIValue(for field: String) -> String? {
+        guard let json = aiOriginalValues,
+              let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return dict[field] as? String
+    }
+
+    private static func encodeOriginalValues(_ dto: ClothingItemDTO) -> String? {
+        let dict: [String: Any] = [
+            "type": dto.type,
+            "category": dto.category,
+            "primaryColor": dto.primaryColor,
+            "secondaryColor": dto.secondaryColor as Any,
+            "pattern": dto.pattern,
+            "fabricEstimate": dto.fabricEstimate,
+            "weight": dto.weight,
+            "formality": dto.formality,
+            "fit": dto.fit as Any,
+            "statementLevel": dto.statementLevel,
+            "itemDescription": dto.description
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

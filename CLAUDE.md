@@ -7,7 +7,7 @@ A wardrobe management iOS app. Users scan clothing via camera/photo library, the
 - **Language:** Swift (strict concurrency enabled)
 - **UI:** SwiftUI
 - **Min Target:** iOS 26.2
-- **Storage:** SwiftData (planned — currently in-memory only)
+- **Storage:** SwiftData
 - **AI:** Anthropic Claude API (vision + outfit generation)
 - **Architecture:** MVVM
 - **Dependencies:** None. Apple frameworks + URLSession only. Do NOT add SPM packages, CocoaPods, or any third-party dependencies without explicit approval.
@@ -21,17 +21,30 @@ A wardrobe management iOS app. Users scan clothing via camera/photo library, the
 ```
 Attierly/
 ├── App/AttierlyApp.swift
-├── Models/ClothingItem.swift
+├── Models/
+│   ├── ClothingItem.swift          # SwiftData @Model (persistent)
+│   ├── ClothingItemDTO.swift       # Codable struct (API parsing)
+│   └── ScanSession.swift           # SwiftData @Model
 ├── Services/
-│   ├── AnthropicService.swift      # Claude API calls
-│   └── ConfigManager.swift         # Reads API key from Config.plist
-├── ViewModels/ScanViewModel.swift
+│   ├── AnthropicService.swift      # Claude API calls + duplicate detection
+│   ├── ConfigManager.swift         # Reads API key from Config.plist
+│   └── ImageStorageService.swift   # Save/load images on disk
+├── ViewModels/
+│   ├── ScanViewModel.swift
+│   └── WardrobeViewModel.swift
 ├── Views/
+│   ├── MainTabView.swift           # TabView (Scan + Wardrobe)
 │   ├── HomeView.swift
 │   ├── ResultsView.swift
 │   ├── ClothingItemCard.swift
-│   └── ImagePicker.swift           # UIImagePickerController wrapper
-├── Helpers/ColorMapping.swift      # Color name → SwiftUI Color
+│   ├── ImagePicker.swift           # UIImagePickerController wrapper
+│   ├── WardrobeView.swift          # Browsable wardrobe (grid/list)
+│   ├── ItemDetailView.swift        # View/edit item details
+│   ├── DuplicateWarningBanner.swift
+│   └── DuplicateReviewSheet.swift
+├── Helpers/
+│   ├── ColorMapping.swift          # Color name → SwiftUI Color
+│   └── ClothingItemDisplayable.swift  # Protocol for DTO + Model
 └── Resources/
     ├── Config.plist.example
     └── Assets.xcassets
@@ -45,9 +58,10 @@ Attierly/
 ## Architecture Rules (MVVM)
 
 ### Models (`Models/`)
-- Plain data types. Currently `Codable` structs, will migrate to SwiftData `@Model` classes in v0.2.
+- `ClothingItem` is a SwiftData `@Model` class for persistence. `ClothingItemDTO` is a `Codable` struct for API parsing. `ScanSession` is a SwiftData `@Model`.
 - No business logic, no API calls, no UI code.
-- Models own their `CodingKeys` for JSON mapping (snake_case API ↔ camelCase Swift).
+- DTOs own their `CodingKeys` for JSON mapping (snake_case API ↔ camelCase Swift).
+- `ClothingItem` uses `itemDescription` (not `description`) to avoid NSObject conflict.
 
 ### Services (`Services/`)
 - Handle all external I/O: API calls, file system, config reading.
@@ -96,7 +110,7 @@ Attierly/
 - Model: `claude-sonnet-4-20250514`
 - API version header: `anthropic-version: 2023-06-01`
 - Images sent as base64-encoded JPEG at 0.6 compression quality
-- Response parsing: extract `content[0].text`, decode as JSON array of `ClothingItem`
+- Response parsing: extract `content[0].text`, decode as JSON array of `ClothingItemDTO`
 
 ### Prompt Location
 The clothing detection prompt lives as a string constant inside `AnthropicService`. If prompts grow more complex in later versions, extract to a `Prompts/` directory with one file per prompt.
@@ -123,38 +137,64 @@ The clothing detection prompt lives as a string constant inside `AnthropicServic
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.1) ✅
+## Current State (v0.2.1) ✅
 - Camera and photo library input
 - Claude vision API integration for clothing detection
 - Results displayed as cards with all attributes
-- In-memory session history on home screen
+- SwiftData persistence for clothing items and scan sessions
+- Images stored on disk (Documents/clothing-images/ and Documents/scan-images/)
+- Wardrobe view with grid/list toggle and category filtering
+- Item detail/edit view with all fields editable, AI originals shown as reference
+- Save individual items or save all from scan results
+- Duplicate detection: pre-filter by category+color, Claude-based comparison, user confirmation
+- Tab-based navigation (Scan + Wardrobe)
 - Error handling (missing key, network, API, empty results)
-- **No persistence** — everything is lost on app restart
 
 ## Roadmap
 
-### v0.2 — Persistence & Wardrobe (next)
-- Migrate `ClothingItem` from `Codable` struct → SwiftData `@Model` class
-  - Keep `Codable` conformance for API response parsing; use a factory method or init to create `@Model` instances from decoded API data
-  - Add `createdAt`, `updatedAt`, `brand`, `notes`, `imagePath`, `sourceImagePath` fields
-- Store images on disk (`Documents/` directory), save file paths in model
-- Add `Wardrobe` view — browsable, filterable collection of all saved items
-- Add feature for user to save an item, a saved item will be
-added to the wardrobe
-- Add `ScanSession` as a persisted model (date, source image, linked items)
-- Duplicate detection: when scanning, pre-filter by category + primary color, then use Claude to confirm if an item already exists in the wardrobe
-- User-editable fields: brand, material override, personal notes
-
-### v0.3 — Outfit Generation
-- `Outfit` model: ordered collection of `ClothingItem`s
+### v0.3 — Outfit Generation (next)
+- `Outfit` model: ordered collection of `ClothingItem`s with layer ordering
 - Manual outfit creation: user picks items from wardrobe
-- AI outfit generation: send wardrobe items to Claude, get outfit suggestions based on occasion/weather/style
+- AI outfit generation: send wardrobe item attributes to Claude with context (occasion, weather, style preference), receive ranked outfit suggestions
+- Outfit display as a **card-based layout** — items shown as cards in a vertical stack ordered by layer (outerwear → tops → bottoms → footwear → accessories), each card showing the item's photo thumbnail, name, and key attributes
+- This is a deliberate interim UI. The card layout validates whether users engage with AI outfit generation before investing in the visual compositor (v0.5). Design the outfit data model and view model so the card layout can be swapped for the layered visual later without changing the underlying logic.
 - Outfit history and favorites
+- New tab: Outfits (Scan + Wardrobe + Outfits)
 
-### v0.4 — Image Extraction
-- Crop/extract individual items from group photos
-- Per-item image stored separately from source scan image
+### v0.4 — Image Extraction & Confidence
+- Crop/extract individual items from group photos into per-item images stored separately from the source scan image
+- Use Apple Vision framework (`VNGenerateForegroundInstanceMaskRequest`) for background removal to produce clean cutouts on transparent backgrounds
 - Potentially use Vision framework for object detection bounding boxes before sending to Claude
+- **Attribute confidence system:** modify the scan prompt to have Claude return a confidence level per attribute — `observed` (clearly visible in the image), `inferred` (reasonable guess based on visible cues), `assumed` (generic default, low certainty). Store as a JSON map in `attributeConfidence` field on `ClothingItem`.
+- Surface confidence to the user: inferred/assumed attributes shown with a subtle indicator so the user knows what the AI is guessing vs. seeing
+- Items with mostly low-confidence attributes get a badge in the wardrobe prompting the user to "add a better photo"
+- **Re-scan merge workflow:** user adds a dedicated close-up or flat-lay photo of an item. System re-runs extraction on the new photo and merges: user edits are always preserved, AI-generated fields are updated with the new (presumably better) values, confidence levels are upgraded
+
+### v0.5 — Visual Outfit Compositor
+Replace the card-based outfit layout from v0.3 with a **layered visual composition** where items appear stacked as they would on a body. The goal is an almost-3D effect: a t-shirt visible through an open jacket, jeans below the shirt hem, shoes at the bottom. Items have realistic spatial relationships and overlapping, not just a flat list.
+
+#### Two sub-problems
+1. **Isolation** — every item needs to exist as a clean cutout with transparent background. Groundwork laid in v0.4 (Vision framework background removal). Items scanned from outfit photos will have partial visibility; items scanned individually will be more complete.
+2. **Normalization** — items photographed from different angles, distances, and lighting must be transformed into a consistent visual system so they compose together. A shirt from a selfie, a jacket from a flat-lay, and jeans from a product page cannot simply be stacked — they need matching perspective, scale, and lighting.
+
+#### Planned approach: generative flat-lay standardization
+Use a generative AI model to transform whatever source photo the user provided into a **standardized flat-lay product image**: front-facing, studio-lit, transparent background, proportional scale. This becomes the "compositing asset" for each item.
+
+The compositor then stacks flat-lay images in z-order using category-based anchor points:
+- Tops anchor at the shoulder line
+- Bottoms anchor at the waist line
+- Outerwear wraps around the top layer
+- Footwear sits at the bottom
+- Accessories placed contextually (scarves at neck, hats above, bags to the side)
+
+Scaling is relative to a standard body proportion so items look right together regardless of original photo zoom level.
+
+#### Key considerations and open questions
+- **Fidelity trade-off:** generated flat-lays are approximations, not exact replicas. Colors may shift slightly, logos or graphics may not reproduce accurately, fabric texture is estimated. This is acceptable for outfit visualization ("does this combination work?") but the user should understand these are AI-rendered representations, not photographs. Consider a subtle label or visual treatment that distinguishes generated composites from real photos.
+- **Flat-lay photo option:** when a user adds a real flat-lay photo of an item (shot on a clean surface, full item visible), prefer that over the AI-generated version. This gives power users a path to higher fidelity without requiring it from everyone.
+- **Image generation provider:** evaluate options at the time of implementation — cloud APIs (Stability AI, DALL-E, etc.), on-device diffusion models (Core ML converted), or Apple generative frameworks if available. Key criteria: transparent background support, consistency across items, latency, and cost per generation.
+- **Template system:** define silhouette geometry per garment sub-type (crew neck vs. v-neck vs. henley, slim jeans vs. wide leg vs. shorts, blazer vs. puffer vs. trench) for consistent anchor points and layering. This is significant design work — scope it before committing.
+- **Caching:** generated flat-lays should be stored on disk (`flatLayImagePath` on `ClothingItem`) and only regenerated if the source image changes or the user requests it.
 
 ### Future Ideas
 - iCloud sync via SwiftData + CloudKit
@@ -163,24 +203,37 @@ added to the wardrobe
 - Share outfits
 - Seasonal wardrobe rotation suggestions
 - Weather API integration for context-aware outfit suggestions
+- Virtual try-on: user photo + generated outfit overlay (significant technical leap, requires pose estimation)
 
-## Data Model Design (planned for v0.2+)
+## Data Model Design
 
 ```
-ClothingItem (SwiftData @Model)
+ClothingItem (SwiftData @Model) — IMPLEMENTED
 ├── id: UUID
 ├── type, category, primaryColor, secondaryColor, pattern
 ├── fabricEstimate, weight, formality, season, fit, statementLevel
-├── description: String           # AI-generated one-sentence summary
+├── itemDescription: String       # renamed from description (NSObject conflict)
 ├── brand: String?                # user-editable
 ├── notes: String?                # user-editable
 ├── imagePath: String?            # path to cropped item image on disk
 ├── sourceImagePath: String?      # path to original scan image
+├── aiOriginalValues: String?     # JSON blob of original AI-detected values
 ├── createdAt: Date
 ├── updatedAt: Date
-└── outfits: [Outfit]             # inverse relationship
+└── scanSession: ScanSession?     # inverse relationship
 
-Outfit (SwiftData @Model)
+ClothingItemDTO (Codable struct) — IMPLEMENTED
+├── Same fields as API response (uses "description" not "itemDescription")
+├── CodingKeys for snake_case mapping
+└── Used only for API response parsing, then converted to ClothingItem
+
+ScanSession (SwiftData @Model) — IMPLEMENTED
+├── id: UUID
+├── imagePath: String
+├── date: Date
+└── items: [ClothingItem]
+
+Outfit (SwiftData @Model) — PLANNED (v0.3)
 ├── id: UUID
 ├── name: String?
 ├── occasion: String?
@@ -188,12 +241,20 @@ Outfit (SwiftData @Model)
 ├── isAIGenerated: Bool
 ├── createdAt: Date
 └── isFavorite: Bool
+```
 
-ScanSession (SwiftData @Model)
-├── id: UUID
-├── imagePath: String             # original photo
-├── date: Date
-└── items: [ClothingItem]         # items detected in this scan
+### Planned Model Extensions
+
+```
+ClothingItem — v0.3 additions
+└── outfits: [Outfit]             # inverse relationship
+
+ClothingItem — v0.4 additions
+├── cutoutImagePath: String?      # path to background-removed cutout (transparent PNG)
+└── attributeConfidence: String?  # JSON map of field name → "observed"/"inferred"/"assumed"
+
+ClothingItem — v0.5 additions
+└── flatLayImagePath: String?     # path to AI-generated or user-provided flat-lay image
 ```
 
 ## Duplicate Detection Strategy

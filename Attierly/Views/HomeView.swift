@@ -1,9 +1,12 @@
 import SwiftUI
 import PhotosUI
+import SwiftData
 
 struct HomeView: View {
     @State private var viewModel = ScanViewModel()
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ScanSession.date, order: .reverse) private var recentSessions: [ScanSession]
 
     var body: some View {
         NavigationStack {
@@ -49,19 +52,25 @@ struct HomeView: View {
 
                 Spacer()
 
-                if !viewModel.sessionHistory.isEmpty {
+                if !recentSessions.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Recent Scans")
                             .font(.headline)
                             .padding(.horizontal)
 
-                        List(viewModel.sessionHistory) { session in
+                        List(recentSessions) { session in
                             HStack(spacing: 12) {
-                                Image(uiImage: session.image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 50, height: 50)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                if let image = ImageStorageService.loadImage(relativePath: session.imagePath) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 50, height: 50)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.secondary.opacity(0.2))
+                                        .frame(width: 50, height: 50)
+                                }
 
                                 VStack(alignment: .leading) {
                                     Text("\(session.items.count) item\(session.items.count == 1 ? "" : "s") detected")
@@ -97,6 +106,9 @@ struct HomeView: View {
                     }
                 }
                 selectedPhotoItem = nil
+            }
+            .onAppear {
+                viewModel.modelContext = modelContext
             }
         }
     }

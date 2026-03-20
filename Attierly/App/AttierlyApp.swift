@@ -1,17 +1,12 @@
-//
-//  AttierlyApp.swift
-//  Attierly
-//
-//  Created by Giulio Bardelli on 3/20/26.
-//
-
 import SwiftUI
+import SwiftData
 
 @main
 struct AttierlyApp: App {
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            MainTabView()
         }
+        .modelContainer(for: [ClothingItem.self, ScanSession.self])
     }
 }

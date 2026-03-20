@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ClothingItemCard: View {
-    let item: ClothingItem
+    let item: any ClothingItemDisplayable
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -72,7 +72,7 @@ struct ClothingItemCard: View {
             }
 
             // Description
-            Text(item.description)
+            Text(item.displayDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
