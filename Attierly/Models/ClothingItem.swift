@@ -36,6 +36,7 @@ final class ClothingItem {
 
     // Relationships
     var scanSession: ScanSession?
+    var outfits: [Outfit] = []
 
     init(from dto: ClothingItemDTO, sourceImagePath: String? = nil) {
         self.id = dto.id

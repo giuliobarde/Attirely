@@ -7,6 +7,6 @@ struct AttierlyApp: App {
         WindowGroup {
             MainTabView()
         }
-        .modelContainer(for: [ClothingItem.self, ScanSession.self])
+        .modelContainer(for: [ClothingItem.self, ScanSession.self, Outfit.self])
     }
 }

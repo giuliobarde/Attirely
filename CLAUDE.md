@@ -24,16 +24,19 @@ Attierly/
 ├── Models/
 │   ├── ClothingItem.swift          # SwiftData @Model (persistent)
 │   ├── ClothingItemDTO.swift       # Codable struct (API parsing)
-│   └── ScanSession.swift           # SwiftData @Model
+│   ├── ScanSession.swift           # SwiftData @Model
+│   ├── Outfit.swift                # SwiftData @Model (outfit collection)
+│   └── OutfitSuggestionDTO.swift   # Codable struct (AI outfit parsing)
 ├── Services/
-│   ├── AnthropicService.swift      # Claude API calls + duplicate detection
+│   ├── AnthropicService.swift      # Claude API calls (scan, duplicates, outfits)
 │   ├── ConfigManager.swift         # Reads API key from Config.plist
 │   └── ImageStorageService.swift   # Save/load images on disk
 ├── ViewModels/
 │   ├── ScanViewModel.swift
-│   └── WardrobeViewModel.swift
+│   ├── WardrobeViewModel.swift
+│   └── OutfitViewModel.swift       # Outfit creation, generation, favorites
 ├── Views/
-│   ├── MainTabView.swift           # TabView (Scan + Wardrobe)
+│   ├── MainTabView.swift           # TabView (Scan + Outfits + Wardrobe)
 │   ├── HomeView.swift
 │   ├── ResultsView.swift
 │   ├── ClothingItemCard.swift
@@ -41,10 +44,16 @@ Attierly/
 │   ├── WardrobeView.swift          # Browsable wardrobe (grid/list)
 │   ├── ItemDetailView.swift        # View/edit item details
 │   ├── DuplicateWarningBanner.swift
-│   └── DuplicateReviewSheet.swift
+│   ├── DuplicateReviewSheet.swift
+│   ├── OutfitsView.swift           # Outfit list with favorites filter
+│   ├── OutfitDetailView.swift      # Layer-ordered card stack view
+│   ├── OutfitRowCard.swift         # Compact outfit card for list
+│   ├── OutfitGenerationContextSheet.swift  # AI generation context picker
+│   └── ItemPickerSheet.swift       # Manual outfit item selection
 ├── Helpers/
 │   ├── ColorMapping.swift          # Color name → SwiftUI Color
-│   └── ClothingItemDisplayable.swift  # Protocol for DTO + Model
+│   ├── ClothingItemDisplayable.swift  # Protocol for DTO + Model
+│   └── OutfitLayerOrder.swift      # Category → layer sort order
 └── Resources/
     ├── Config.plist.example
     └── Assets.xcassets
@@ -58,10 +67,11 @@ Attierly/
 ## Architecture Rules (MVVM)
 
 ### Models (`Models/`)
-- `ClothingItem` is a SwiftData `@Model` class for persistence. `ClothingItemDTO` is a `Codable` struct for API parsing. `ScanSession` is a SwiftData `@Model`.
+- `ClothingItem` is a SwiftData `@Model` class for persistence. `ClothingItemDTO` is a `Codable` struct for API parsing. `ScanSession` and `Outfit` are SwiftData `@Model`s. `OutfitSuggestionDTO` is a `Codable` struct for AI outfit response parsing.
 - No business logic, no API calls, no UI code.
 - DTOs own their `CodingKeys` for JSON mapping (snake_case API ↔ camelCase Swift).
 - `ClothingItem` uses `itemDescription` (not `description`) to avoid NSObject conflict.
+- `Outfit` has a `displayName` computed property that falls back from `name` → `occasion` → formatted date.
 
 ### Services (`Services/`)
 - Handle all external I/O: API calls, file system, config reading.
@@ -112,8 +122,14 @@ Attierly/
 - Images sent as base64-encoded JPEG at 0.6 compression quality
 - Response parsing: extract `content[0].text`, decode as JSON array of `ClothingItemDTO`
 
+### Outfit Generation API
+- Text-only request (no image) — sends wardrobe item attributes with UUIDs
+- Returns JSON array of `OutfitSuggestionDTO` with `name`, `occasion`, `item_ids`, `reasoning`
+- Prompt enforces: 3-6 items per outfit, exactly one footwear, max 3-4 colors, max 2 patterns, consistent formality
+- Uses 2048 max tokens (vs 4096 for vision analysis)
+
 ### Prompt Location
-The clothing detection prompt lives as a string constant inside `AnthropicService`. If prompts grow more complex in later versions, extract to a `Prompts/` directory with one file per prompt.
+All prompts (clothing analysis, duplicate detection, outfit generation) live as string constants inside `AnthropicService`. If prompts grow more complex in later versions, extract to a `Prompts/` directory with one file per prompt.
 
 ### API Key
 - Read once from `Config.plist` at launch via `ConfigManager`.
@@ -137,31 +153,26 @@ The clothing detection prompt lives as a string constant inside `AnthropicServic
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.2.1) ✅
+## Current State (v0.3) ✅
 - Camera and photo library input
 - Claude vision API integration for clothing detection
 - Results displayed as cards with all attributes
-- SwiftData persistence for clothing items and scan sessions
+- SwiftData persistence for clothing items, scan sessions, and outfits
 - Images stored on disk (Documents/clothing-images/ and Documents/scan-images/)
 - Wardrobe view with grid/list toggle and category filtering
 - Item detail/edit view with all fields editable, AI originals shown as reference
 - Save individual items or save all from scan results
 - Duplicate detection: pre-filter by category+color, Claude-based comparison, user confirmation
-- Tab-based navigation (Scan + Wardrobe)
-- Error handling (missing key, network, API, empty results)
+- Tab-based navigation (Scan + Outfits + Wardrobe)
+- **Outfit generation**: manual creation via item picker, AI-powered generation with occasion/season context
+- **Outfit display**: card-based layout with items ordered by layer (Outerwear → Full Body → Top → Bottom → Footwear → Accessory)
+- **Outfit management**: favorites, deletion, AI reasoning display
+- Layer ordering via `OutfitLayerOrder` helper — deterministic sort by category, designed to be reusable by v0.5 visual compositor
+- Error handling (missing key, network, API, empty results, insufficient wardrobe)
 
 ## Roadmap
 
-### v0.3 — Outfit Generation (next)
-- `Outfit` model: ordered collection of `ClothingItem`s with layer ordering
-- Manual outfit creation: user picks items from wardrobe
-- AI outfit generation: send wardrobe item attributes to Claude with context (occasion, weather, style preference), receive ranked outfit suggestions
-- Outfit display as a **card-based layout** — items shown as cards in a vertical stack ordered by layer (outerwear → tops → bottoms → footwear → accessories), each card showing the item's photo thumbnail, name, and key attributes
-- This is a deliberate interim UI. The card layout validates whether users engage with AI outfit generation before investing in the visual compositor (v0.5). Design the outfit data model and view model so the card layout can be swapped for the layered visual later without changing the underlying logic.
-- Outfit history and favorites
-- New tab: Outfits (Scan + Wardrobe + Outfits)
-
-### v0.4 — Image Extraction & Confidence
+### v0.4 — Image Extraction & Confidence (next)
 - Crop/extract individual items from group photos into per-item images stored separately from the source scan image
 - Use Apple Vision framework (`VNGenerateForegroundInstanceMaskRequest`) for background removal to produce clean cutouts on transparent backgrounds
 - Potentially use Vision framework for object detection bounding boxes before sending to Claude
@@ -220,7 +231,8 @@ ClothingItem (SwiftData @Model) — IMPLEMENTED
 ├── aiOriginalValues: String?     # JSON blob of original AI-detected values
 ├── createdAt: Date
 ├── updatedAt: Date
-└── scanSession: ScanSession?     # inverse relationship
+├── scanSession: ScanSession?     # inverse relationship
+└── outfits: [Outfit]             # inverse relationship
 
 ClothingItemDTO (Codable struct) — IMPLEMENTED
 ├── Same fields as API response (uses "description" not "itemDescription")
@@ -233,22 +245,28 @@ ScanSession (SwiftData @Model) — IMPLEMENTED
 ├── date: Date
 └── items: [ClothingItem]
 
-Outfit (SwiftData @Model) — PLANNED (v0.3)
+Outfit (SwiftData @Model) — IMPLEMENTED
 ├── id: UUID
 ├── name: String?
 ├── occasion: String?
-├── items: [ClothingItem]
+├── reasoning: String?            # AI explanation of why the outfit works
 ├── isAIGenerated: Bool
+├── isFavorite: Bool
 ├── createdAt: Date
-└── isFavorite: Bool
+├── items: [ClothingItem]         # @Relationship(deleteRule: .nullify)
+└── displayName: String           # computed: name → occasion → formatted date
+
+OutfitSuggestionDTO (Codable struct) — IMPLEMENTED
+├── name: String
+├── occasion: String
+├── itemIDs: [String]             # CodingKey: "item_ids"
+├── reasoning: String
+└── Used only for AI response parsing, then converted to Outfit
 ```
 
 ### Planned Model Extensions
 
 ```
-ClothingItem — v0.3 additions
-└── outfits: [Outfit]             # inverse relationship
-
 ClothingItem — v0.4 additions
 ├── cutoutImagePath: String?      # path to background-removed cutout (transparent PNG)
 └── attributeConfidence: String?  # JSON map of field name → "observed"/"inferred"/"assumed"

@@ -7,6 +7,7 @@ enum AnthropicError: LocalizedError {
     case apiError(Int, String)
     case decodingError(String)
     case emptyResults
+    case insufficientWardrobe
 
     var errorDescription: String? {
         switch self {
@@ -20,6 +21,8 @@ enum AnthropicError: LocalizedError {
             return "Failed to parse the response: \(detail)"
         case .emptyResults:
             return "No clothing items detected. Try a clearer photo."
+        case .insufficientWardrobe:
+            return "Add more items to your wardrobe before generating outfits."
         }
     }
 }
@@ -208,6 +211,89 @@ struct AnthropicService {
         }
 
         return results
+    }
+
+    // MARK: - Outfit Generation
+
+    private static let outfitGenerationPrompt = """
+    You are a personal stylist. Based on the clothing items listed below, suggest up to 3 complete outfit combinations.
+
+    Rules for each outfit:
+    - Each outfit must have 3 to 6 items
+    - Include exactly one pair of footwear (if available)
+    - Include either one bottom OR one full body item (dress/jumpsuit), not both
+    - Include 1-2 tops (unless a full body item is selected)
+    - Include 0-2 outerwear pieces depending on season
+    - Include 0-2 accessories to complete the look
+    - Each item ID must be unique — do not use the same item twice
+    - Limit to 3-4 colors maximum across the entire outfit
+    - Avoid mixing more than 2 patterns
+    - Keep formality level consistent across all items
+    - Consider the provided occasion and season context if given
+
+    Return ONLY a valid JSON array. Each element must have:
+    - "name": a short, evocative outfit name (e.g., "Weekend Casual", "Office Ready", "Evening Out")
+    - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal"
+    - "item_ids": array of item id strings from the list below (use ONLY the provided IDs, do not invent new ones)
+    - "reasoning": one sentence explaining why this combination works, including a styling tip
+
+    No markdown, no explanation, no code fences. Just the raw JSON array.
+    """
+
+    static func generateOutfits(
+        from items: [ClothingItem],
+        occasion: String?,
+        season: String?
+    ) async throws -> [OutfitSuggestionDTO] {
+        guard items.count >= 2 else {
+            throw AnthropicError.insufficientWardrobe
+        }
+
+        let apiKey = try ConfigManager.apiKey()
+
+        var itemList = ""
+        for item in items {
+            itemList += "- id:\(item.id.uuidString) | \(item.type) | \(item.category) | \(item.primaryColor)"
+            if let secondary = item.secondaryColor {
+                itemList += "/\(secondary)"
+            }
+            itemList += " | \(item.pattern) | \(item.fabricEstimate) | \(item.formality) | seasons:\(item.season.joined(separator: ","))"
+            itemList += " | \(item.itemDescription)\n"
+        }
+
+        var contextLine = ""
+        if let occasion { contextLine += "Occasion preference: \(occasion)\n" }
+        if let season { contextLine += "Current season: \(season)\n" }
+
+        let fullPrompt = outfitGenerationPrompt + "\n\nAvailable items:\n" + itemList + "\n" + contextLine
+
+        let requestBody: [String: Any] = [
+            "model": model,
+            "max_tokens": 2048,
+            "messages": [
+                ["role": "user", "content": fullPrompt]
+            ]
+        ]
+
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw AnthropicError.decodingError("Invalid text encoding.")
+        }
+
+        let suggestions: [OutfitSuggestionDTO]
+        do {
+            suggestions = try JSONDecoder().decode([OutfitSuggestionDTO].self, from: jsonData)
+        } catch {
+            throw AnthropicError.decodingError(error.localizedDescription)
+        }
+
+        if suggestions.isEmpty {
+            throw AnthropicError.emptyResults
+        }
+
+        return suggestions
     }
 
     // MARK: - Helpers

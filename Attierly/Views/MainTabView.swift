@@ -6,6 +6,9 @@ struct MainTabView: View {
             Tab("Scan", systemImage: "camera") {
                 HomeView()
             }
+            Tab("Outfits", systemImage: "sparkles") {
+                OutfitsView()
+            }
             Tab("Wardrobe", systemImage: "tshirt") {
                 WardrobeView()
             }
