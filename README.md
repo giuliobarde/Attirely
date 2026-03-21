@@ -13,7 +13,8 @@ Attirely is an iOS app that uses AI-powered vision to identify and analyze cloth
 - **Outfit display** — card-based layout with items ordered by layer (outerwear → tops → bottoms → footwear → accessories)
 - **Favorites** — star outfits for quick access
 - **Profile page** — user name, profile photo, and wardrobe summary stats
-- **User preferences** — temperature unit (°C/°F) applied across all weather displays, theme preference (stored for future use), custom location override with city geocoding
+- **User preferences** — temperature unit (°C/°F) applied across all weather displays, theme preference (System/Light/Dark) with full dark mode, custom location override with city geocoding
+- **Dark mode** — warm espresso/charcoal dark palette with adaptive colors throughout; champagne accent stays consistent across modes
 - **Wardrobe analytics** — category composition (bar chart), formality breakdown (donut chart), and color distribution (swatch grid) powered by Swift Charts
 - **Brand design system** — centralized theme with Obsidian/Ivory/Stone/Champagne/Blush palette, reusable card/pill/tag modifiers, and consistent typography across all views
 

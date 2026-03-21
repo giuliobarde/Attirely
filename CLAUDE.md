@@ -114,7 +114,7 @@ Attirely/
 
 ### Helpers (`Helpers/`)
 - Pure utility functions with no side effects. No state, no I/O.
-- `Theme` — brand design system: color tokens (`Theme.obsidian`, `.ivory`, `.stone`, `.champagne`, `.blush`, `.border`), semantic aliases (`Theme.primaryText`, `.secondaryText`, `.screenBackground`, `.cardFill`, `.cardBorder`), ViewModifiers (`ThemeCardModifier`, `ThemePillModifier`, `ThemeTagModifier`), and ButtonStyles (`ThemePrimaryButtonStyle`, `ThemeSecondaryButtonStyle`). All views use these tokens instead of hardcoded colors.
+- `Theme` — brand design system with **adaptive light/dark mode** support. Color tokens (`Theme.obsidian`, `.ivory`, `.stone`, `.champagne`, `.blush`, `.border`) use `Color(UIColor { traitCollection in ... })` to auto-adapt. Champagne accent is fixed across modes. Semantic aliases (`Theme.primaryText`, `.secondaryText`, `.screenBackground`, `.cardFill`, `.cardBorder`) all adapt. ViewModifiers (`ThemeCardModifier`, `ThemePillModifier`, `ThemeTagModifier`) and ButtonStyles (`ThemePrimaryButtonStyle`, `ThemeSecondaryButtonStyle`). All views use these tokens instead of hardcoded colors.
 - `ColorMapping` translates color name strings to SwiftUI `Color` values (for clothing item display, not UI theme).
 
 ## Swift & Concurrency Conventions
@@ -152,6 +152,7 @@ Attirely/
 - Weather-adaptive rules: temperature-based layering/fabric guidance, precipitation awareness, UV consideration
 - Optional `weatherContext` parameter appended to prompt with current conditions
 - Uses 2048 max tokens (vs 4096 for vision analysis)
+- **Planned improvement**: generate 1 outfit per request (not 3), and include existing outfit item-ID sets in the prompt to prevent duplicate suggestions
 
 ### Weather API
 - **Primary**: Apple WeatherKit via `WeatherKit.WeatherService.shared.weather(for:)` — requires WeatherKit entitlement
@@ -205,14 +206,20 @@ All prompts (clothing analysis, duplicate detection, outfit generation) live as 
 - **Location**: CoreLocation "when in use" permission for weather data, reverse geocoding for city name display
 - **Weather override**: user can toggle "Ignore weather" to use manual season/occasion only
 - **Profile page**: 4th tab with user name, profile photo (via PhotosPicker), and item/outfit count summary
-- **User preferences**: temperature unit (°C/°F) applied across all weather displays, theme preference (stored, switching not yet implemented), custom location override with city geocoding
+- **User preferences**: temperature unit (°C/°F) applied across all weather displays, theme preference (System/Light/Dark) with full dark mode support, custom location override with city geocoding
+- **Dark mode**: adaptive color system in `Theme.swift` using `UIColor { traitCollection in ... }`. Warm espresso/charcoal dark palette. Champagne accent fixed across modes. `ThemeWrapper` in `AttirelyApp` applies `.preferredColorScheme()` based on user's stored `ThemePreference`
 - **Wardrobe analytics dashboard**: Swift Charts — category composition (horizontal bar), formality breakdown (donut/sector chart), color distribution (swatch grid with counts). Empty state for < 3 items.
 - **Temperature formatting**: centralized `TemperatureFormatter` helper, all weather views respect user's unit preference. AI prompt always uses Celsius internally.
 - **Location override**: user can set a custom city; forward geocoding converts to coordinates; weather fetches use override location when enabled
 - Error handling (missing key, network, API, empty results, insufficient wardrobe)
-- **Brand design system**: centralized `Theme.swift` with color tokens (Obsidian, Ivory, Stone, Champagne, Blush, Border), reusable ViewModifiers (`.themeCard()`, `.themePill()`, `.themeTag()`), and ButtonStyles (`.themePrimary`, `.themeSecondary`). CHAMPAGNE set as AccentColor globally. IVORY screen backgrounds, glass-tinted cards, and consistent typography applied across all views.
+- **Brand design system**: centralized `Theme.swift` with adaptive color tokens (Obsidian, Ivory, Stone, Champagne, Blush, Border), reusable ViewModifiers (`.themeCard()`, `.themePill()`, `.themeTag()`), and ButtonStyles (`.themePrimary`, `.themeSecondary`). CHAMPAGNE set as AccentColor globally. Light mode: IVORY backgrounds, glass-tinted cards. Dark mode: warm espresso backgrounds, dark glass cards. Consistent typography across all views.
 
 ## Roadmap
+
+### Outfit Generation Improvements (near-term)
+- Generate only **one** outfit at a time instead of up to 3 — focused single recommendation per request
+- **Deduplicate** against existing outfits — before generating, pass existing outfit item-ID sets to the prompt so the AI avoids suggesting an outfit combination that already exists in the user's collection
+- Requires changes to: `AnthropicService.generateOutfits()` prompt (request 1 outfit, add dedup context), `OutfitViewModel.generateOutfits()` (pass existing outfit item-IDs)
 
 ### v0.5 — Style Intelligence (next)
 - **AI Style Agent**: analyze the user's full wardrobe to generate a written style profile summary

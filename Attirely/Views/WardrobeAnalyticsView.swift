@@ -81,11 +81,11 @@ struct WardrobeAnalyticsView: View {
                 .foregroundStyle(by: .value("Formality", item.formality))
             }
             .chartForegroundStyleScale([
-                "Casual": Theme.champagne,
-                "Smart Casual": Theme.blush,
-                "Business Casual": Theme.stone,
+                "Casual": Color(red: 0.788, green: 0.663, blue: 0.431),
+                "Smart Casual": Color(red: 0.910, green: 0.816, blue: 0.765),
+                "Business Casual": Color(red: 0.741, green: 0.710, blue: 0.675),
                 "Business": Color(red: 0.45, green: 0.42, blue: 0.38),
-                "Formal": Theme.obsidian
+                "Formal": Color(red: 0.102, green: 0.094, blue: 0.090)
             ])
             .chartLegend(position: .bottom, alignment: .center, spacing: 8)
             .frame(height: 200)

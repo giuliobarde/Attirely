@@ -155,9 +155,6 @@ struct ProfileView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                Text("Theme switching coming soon")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.secondaryText)
             }
 
             Divider()

@@ -1,33 +1,82 @@
 import SwiftUI
 
 enum Theme {
-    // MARK: - Color Tokens
+    // MARK: - Adaptive Color Helper
 
-    static let obsidian   = Color(red: 0.102, green: 0.094, blue: 0.090)  // #1A1817
-    static let ivory      = Color(red: 0.976, green: 0.961, blue: 0.941)  // #F9F5F0
-    static let stone      = Color(red: 0.741, green: 0.710, blue: 0.675)  // #BDB5AC
-    static let champagne  = Color(red: 0.788, green: 0.663, blue: 0.431)  // #C9A96E
-    static let blush      = Color(red: 0.910, green: 0.816, blue: 0.765)  // #E8D0C3
-    static let border     = Color(red: 0.910, green: 0.886, blue: 0.855)  // #E8E2DA
+    private static func adaptive(light: UIColor, dark: UIColor) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
 
-    // MARK: - Semantic Aliases
+    // MARK: - Dark Palette (raw UIColors)
+
+    private static let darkBackground = UIColor(red: 0.098, green: 0.086, blue: 0.078, alpha: 1.0)  // #191615
+    private static let darkSurface    = UIColor(red: 0.145, green: 0.129, blue: 0.118, alpha: 1.0)  // #25211E
+    private static let darkElevated   = UIColor(red: 0.192, green: 0.173, blue: 0.157, alpha: 1.0)  // #312C28
+    private static let darkStone      = UIColor(red: 0.580, green: 0.553, blue: 0.522, alpha: 1.0)  // #948D85
+    private static let darkBorderUI   = UIColor(red: 0.235, green: 0.216, blue: 0.200, alpha: 1.0)  // #3C3733
+    private static let darkBlush      = UIColor(red: 0.310, green: 0.243, blue: 0.212, alpha: 1.0)  // #4F3E36
+    private static let darkTagTextUI  = UIColor(red: 0.855, green: 0.749, blue: 0.690, alpha: 1.0)  // #DABFB0
+
+    // MARK: - Light Palette (raw UIColors)
+
+    private static let lightObsidian = UIColor(red: 0.102, green: 0.094, blue: 0.090, alpha: 1.0)   // #1A1817
+    private static let lightIvory    = UIColor(red: 0.976, green: 0.961, blue: 0.941, alpha: 1.0)   // #F9F5F0
+    private static let lightStone    = UIColor(red: 0.741, green: 0.710, blue: 0.675, alpha: 1.0)   // #BDB5AC
+    private static let lightBlush    = UIColor(red: 0.910, green: 0.816, blue: 0.765, alpha: 1.0)   // #E8D0C3
+    private static let lightBorder   = UIColor(red: 0.910, green: 0.886, blue: 0.855, alpha: 1.0)   // #E8E2DA
+
+    // MARK: - Color Tokens (adaptive)
+
+    static let obsidian   = adaptive(light: lightObsidian, dark: lightIvory)
+    static let ivory      = adaptive(light: lightIvory, dark: darkBackground)
+    static let stone      = adaptive(light: lightStone, dark: darkStone)
+    static let champagne  = Color(red: 0.788, green: 0.663, blue: 0.431)  // #C9A96E — fixed accent
+    static let blush      = adaptive(light: lightBlush, dark: darkBlush)
+    static let border     = adaptive(light: lightBorder, dark: darkBorderUI)
+
+    // MARK: - Semantic Aliases (adaptive)
 
     static let primaryText      = obsidian
     static let secondaryText    = stone
     static let screenBackground = ivory
-    static let cardFill         = Color.white.opacity(0.6)
-    static let cardBorder       = border.opacity(0.5)
-    static let glassCardTint    = ivory.opacity(0.55)
-    static let scrim            = obsidian.opacity(0.4)
-    static let tagBackground    = blush.opacity(0.7)
-    static let tagText          = Color(red: 0.549, green: 0.416, blue: 0.353) // #8C6A5A
-    static let placeholderFill  = stone.opacity(0.2)
 
-    // MARK: - Category Pill States
+    static let cardFill = adaptive(
+        light: UIColor.white.withAlphaComponent(0.6),
+        dark: darkSurface.withAlphaComponent(0.6)
+    )
+    static let cardBorder = adaptive(
+        light: lightBorder.withAlphaComponent(0.5),
+        dark: darkBorderUI.withAlphaComponent(0.5)
+    )
+    static let glassCardTint = adaptive(
+        light: lightIvory.withAlphaComponent(0.55),
+        dark: darkSurface.withAlphaComponent(0.55)
+    )
+    static let scrim = adaptive(
+        light: lightObsidian.withAlphaComponent(0.4),
+        dark: UIColor.black.withAlphaComponent(0.5)
+    )
+    static let tagBackground = adaptive(
+        light: lightBlush.withAlphaComponent(0.7),
+        dark: darkBlush.withAlphaComponent(0.7)
+    )
+    static let tagText = adaptive(
+        light: UIColor(red: 0.549, green: 0.416, blue: 0.353, alpha: 1.0),
+        dark: darkTagTextUI
+    )
+    static let placeholderFill = adaptive(
+        light: lightStone.withAlphaComponent(0.2),
+        dark: darkStone.withAlphaComponent(0.2)
+    )
 
-    static let pillDefaultBg   = border.opacity(0.6)
+    // MARK: - Category Pill States (adaptive)
+
+    static let pillDefaultBg = adaptive(
+        light: lightBorder.withAlphaComponent(0.6),
+        dark: darkBorderUI.withAlphaComponent(0.8)
+    )
     static let pillDefaultText = stone
-    static let pillActiveBg    = obsidian
+    static let pillActiveBg    = adaptive(light: lightObsidian, dark: lightIvory)
     static let pillActiveText  = champagne
 }
 
