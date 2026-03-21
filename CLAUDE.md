@@ -204,7 +204,24 @@ All prompts (clothing analysis, duplicate detection, outfit generation) live as 
 
 ## Roadmap
 
-### v0.4 — Image Extraction & Confidence (next)
+### v0.4 — Style Intelligence (next)
+- **AI Style Agent**: analyze the user's full wardrobe to generate a written style profile summary
+- Identifies dominant aesthetics (e.g., "minimalist", "streetwear", "classic"), color palettes the user gravitates toward, formality tendencies, pattern preferences, and gaps/opportunities ("you have many casual tops but few smart-casual options")
+- **Wardrobe analytics**: color distribution, formality breakdown, category composition stats, seasonal coverage gaps
+- The style summary is stored persistently and displayed as editable text — the user can view, refine, or override the AI's perception of their style
+- The style summary is optionally fed into the outfit generation prompt so the AI generates outfits that align with the user's established style identity
+- **Auto re-analysis**: triggered automatically whenever the user manually creates an outfit (manual creation signals intentional style preference). Also triggerable manually via a "Re-analyze" button
+- **Incremental analysis**: re-analysis receives the previous style summary alongside new wardrobe data. The previous analysis is weighted more heavily than new data to maintain stability — style identity evolves gradually, not with every new item. The prompt instructs the AI to treat the existing summary as the baseline and only adjust where new evidence is compelling
+- Requires a new SwiftData model for style summary persistence (summary text, last analyzed date, analysis version/count)
+
+### v0.5 — Profile Page
+- **Profile page** accessible from a new tab or nav element with user details (name, profile photo)
+- **Preferences**: location setting (manual override for weather), temperature unit (°C / °F), theme preference (light/dark/system)
+- **Wardrobe analytics dashboard**: visual charts for color distribution, formality breakdown (pie/bar), category composition
+- **Style summary display**: view and edit the AI-generated style profile from v0.4
+- Requires a `UserProfile` SwiftData model for user details and preferences persistence
+
+### v0.6 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images stored separately from the source scan image
 - Use Apple Vision framework (`VNGenerateForegroundInstanceMaskRequest`) for background removal to produce clean cutouts on transparent backgrounds
 - Potentially use Vision framework for object detection bounding boxes before sending to Claude
@@ -213,7 +230,7 @@ All prompts (clothing analysis, duplicate detection, outfit generation) live as 
 - Items with mostly low-confidence attributes get a badge in the wardrobe prompting the user to "add a better photo"
 - **Re-scan merge workflow:** user adds a dedicated close-up or flat-lay photo of an item. System re-runs extraction on the new photo and merges: user edits are always preserved, AI-generated fields are updated with the new (presumably better) values, confidence levels are upgraded
 
-### v0.5 — Visual Outfit Compositor
+### v0.7 — Visual Outfit Compositor
 Replace the card-based outfit layout from v0.3 with a **layered visual composition** where items appear stacked as they would on a body. The goal is an almost-3D effect: a t-shirt visible through an open jacket, jeans below the shirt hem, shoes at the bottom. Items have realistic spatial relationships and overlapping, not just a flat list.
 
 #### Two sub-problems
