@@ -9,17 +9,12 @@ struct ClothingItemCard: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(item.type)
                     .font(.headline)
+                    .foregroundStyle(Theme.primaryText)
 
                 Spacer()
 
                 Text(item.category)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundStyle(Color.accentColor)
-                    .clipShape(Capsule())
+                    .themePill()
             }
 
             // Color row
@@ -27,20 +22,22 @@ struct ClothingItemCard: View {
                 Circle()
                     .fill(ColorMapping.color(for: item.primaryColor))
                     .frame(width: 16, height: 16)
-                    .overlay(Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 0.5))
+                    .overlay(Circle().stroke(Theme.border.opacity(0.5), lineWidth: 0.5))
 
                 Text(item.primaryColor)
                     .font(.subheadline)
+                    .foregroundStyle(Theme.primaryText)
 
                 if let secondary = item.secondaryColor {
                     Text("/")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                     Circle()
                         .fill(ColorMapping.color(for: secondary))
                         .frame(width: 16, height: 16)
-                        .overlay(Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 0.5))
+                        .overlay(Circle().stroke(Theme.border.opacity(0.5), lineWidth: 0.5))
                     Text(secondary)
                         .font(.subheadline)
+                        .foregroundStyle(Theme.primaryText)
                 }
             }
 
@@ -63,33 +60,27 @@ struct ClothingItemCard: View {
             HStack(spacing: 6) {
                 ForEach(item.season, id: \.self) { season in
                     Text(season)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.12))
-                        .clipShape(Capsule())
+                        .themeTag()
                 }
             }
 
             // Description
             Text(item.displayDescription)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryText)
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .themeCard()
     }
 
     private func attributeRow(_ label: String, _ value: String) -> some View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryText)
             Text(value)
                 .font(.caption)
                 .fontWeight(.medium)
+                .foregroundStyle(Theme.primaryText)
         }
     }
 }

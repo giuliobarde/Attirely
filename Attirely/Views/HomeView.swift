@@ -16,14 +16,16 @@ struct HomeView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "tshirt")
                         .font(.system(size: 56))
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(Theme.champagne)
 
                     Text("Attirely")
-                        .font(.largeTitle.bold())
+                        .font(.largeTitle.weight(.medium))
+                        .foregroundStyle(Theme.champagne)
+                        .tracking(2)
 
                     Text("Identify clothing with AI")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                 }
 
                 VStack(spacing: 12) {
@@ -34,8 +36,7 @@ struct HomeView: View {
                             Label("Scan Clothes", systemImage: "camera")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
+                        .buttonStyle(.themePrimary)
                     }
 
                     PhotosPicker(
@@ -45,8 +46,7 @@ struct HomeView: View {
                         Label("Choose from Library", systemImage: "photo.on.rectangle")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
+                    .buttonStyle(.themeSecondary)
                 }
                 .padding(.horizontal, 32)
 
@@ -68,7 +68,7 @@ struct HomeView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                 } else {
                                     RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.secondary.opacity(0.2))
+                                        .fill(Theme.placeholderFill)
                                         .frame(width: 50, height: 50)
                                 }
 
@@ -77,16 +77,18 @@ struct HomeView: View {
                                         .font(.subheadline.weight(.medium))
                                     Text(session.items.map(\.type).joined(separator: ", "))
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Theme.secondaryText)
                                         .lineLimit(1)
                                 }
                             }
                         }
                         .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                         .frame(maxHeight: 200)
                     }
                 }
             }
+            .background(Theme.screenBackground)
             .navigationTitle("")
             .fullScreenCover(isPresented: $viewModel.showingCamera) {
                 ImagePicker(sourceType: .camera) { image in

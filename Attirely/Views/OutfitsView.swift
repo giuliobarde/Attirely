@@ -39,7 +39,7 @@ struct OutfitsView: View {
                         }
                     } label: {
                         Image(systemName: viewModel.showFavoritesOnly ? "star.fill" : "star")
-                            .foregroundStyle(viewModel.showFavoritesOnly ? .yellow : .secondary)
+                            .foregroundStyle(viewModel.showFavoritesOnly ? Theme.champagne : Theme.secondaryText)
                     }
                 }
 

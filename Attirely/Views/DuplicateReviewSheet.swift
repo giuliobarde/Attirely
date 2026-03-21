@@ -15,6 +15,7 @@ struct DuplicateReviewSheet: View {
                     VStack(spacing: 8) {
                         Text("Scanned Item")
                             .font(.headline)
+                            .foregroundStyle(Theme.primaryText)
 
                         HStack(spacing: 8) {
                             Circle()
@@ -22,23 +23,22 @@ struct DuplicateReviewSheet: View {
                                 .frame(width: 20, height: 20)
                             Text(scannedItem.type)
                                 .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Theme.primaryText)
                             Text("— \(scannedItem.primaryColor) \(scannedItem.pattern)")
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.secondaryText)
                         }
 
                         Text(scannedItem.description)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .themeCard()
 
                     // Matches
                     Text("Potential Matches")
                         .font(.headline)
+                        .foregroundStyle(Theme.primaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     ForEach(Array(duplicates.enumerated()), id: \.offset) { _, result in
@@ -54,7 +54,7 @@ struct DuplicateReviewSheet: View {
                             Label("Save Anyway", systemImage: "plus.circle")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
 
                         Button {
                             onSkip()
@@ -63,12 +63,13 @@ struct DuplicateReviewSheet: View {
                             Label("Skip This Item", systemImage: "xmark.circle")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.themeSecondary)
                     }
                     .padding(.top, 8)
                 }
                 .padding()
             }
+            .background(Theme.screenBackground)
             .navigationTitle("Duplicate Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -106,6 +107,7 @@ struct DuplicateMatchCard: View {
             HStack {
                 Text(result.existingItem.type)
                     .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.primaryText)
 
                 Spacer()
 
@@ -125,15 +127,13 @@ struct DuplicateMatchCard: View {
                     .frame(width: 14, height: 14)
                 Text("\(result.existingItem.primaryColor) \(result.existingItem.pattern)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
 
             Text(result.explanation)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryText)
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .themeCard()
     }
 }

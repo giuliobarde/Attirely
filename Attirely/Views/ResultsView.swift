@@ -22,22 +22,22 @@ struct ResultsView: View {
                         ProgressView()
                         Text("Analyzing your clothes...")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                     .padding(.top, 40)
                 } else if let error = viewModel.errorMessage {
                     VStack(spacing: 16) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.largeTitle)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                         Text(error)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
                             viewModel.retry()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                     }
                     .padding(.top, 40)
                     .padding(.horizontal)
@@ -50,7 +50,7 @@ struct ResultsView: View {
                             Label("Save All to Wardrobe", systemImage: "square.and.arrow.down")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                         .padding(.horizontal)
                     }
 
@@ -60,7 +60,7 @@ struct ResultsView: View {
                                 .controlSize(.small)
                             Text("Checking for duplicates...")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.secondaryText)
                         }
                     }
 
@@ -82,7 +82,7 @@ struct ResultsView: View {
                                 if viewModel.isItemSaved(dto) {
                                     Label("Saved to Wardrobe", systemImage: "checkmark.circle.fill")
                                         .font(.subheadline)
-                                        .foregroundStyle(.green)
+                                        .foregroundStyle(Theme.champagne)
                                 } else {
                                     HStack(spacing: 12) {
                                         Button {
@@ -91,7 +91,7 @@ struct ResultsView: View {
                                             Label("Save", systemImage: "plus.circle")
                                                 .frame(maxWidth: .infinity)
                                         }
-                                        .buttonStyle(.borderedProminent)
+                                        .buttonStyle(.themePrimary)
 
                                         Button {
                                             viewModel.dismissItem(dto)
@@ -99,7 +99,7 @@ struct ResultsView: View {
                                             Label("Dismiss", systemImage: "xmark")
                                                 .frame(maxWidth: .infinity)
                                         }
-                                        .buttonStyle(.bordered)
+                                        .buttonStyle(.themeSecondary)
                                     }
                                 }
                             }
@@ -110,6 +110,7 @@ struct ResultsView: View {
             }
             .padding(.bottom)
         }
+        .background(Theme.screenBackground)
         .navigationTitle("Results")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

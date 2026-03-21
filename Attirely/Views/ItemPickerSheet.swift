@@ -61,15 +61,16 @@ struct ItemPickerSheet: View {
                 HStack {
                     Text("\(viewModel.manualSelectedItems.count) selected")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
 
                     Spacer()
 
                     Button("Create Outfit") {
                         viewModel.saveManualOutfit(from: wardrobeItems)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.themePrimary)
                     .disabled(viewModel.manualSelectedItems.isEmpty)
+                    .frame(width: 180)
                 }
                 .padding()
                 .background(.ultraThinMaterial)
@@ -107,7 +108,7 @@ private struct PickerGridCell: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.secondary.opacity(0.15))
+                        .fill(Theme.placeholderFill)
                         .frame(height: 150)
                         .overlay {
                             VStack(spacing: 4) {
@@ -115,7 +116,7 @@ private struct PickerGridCell: View {
                                     .fill(ColorMapping.color(for: item.primaryColor))
                                     .frame(width: 32, height: 32)
                                 Image(systemName: "tshirt")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.secondaryText)
                             }
                         }
                 }
@@ -123,7 +124,7 @@ private struct PickerGridCell: View {
                 // Selection badge
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .foregroundStyle(isSelected ? Theme.champagne : Theme.secondaryText)
                     .background(
                         Circle()
                             .fill(.ultraThinMaterial)
@@ -134,18 +135,19 @@ private struct PickerGridCell: View {
             .overlay {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.accentColor, lineWidth: 2)
+                        .stroke(Theme.champagne, lineWidth: 2)
                 }
             }
 
             Text(item.type)
                 .font(.caption)
                 .fontWeight(.medium)
+                .foregroundStyle(Theme.primaryText)
                 .lineLimit(1)
 
             Text(item.category)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryText)
         }
     }
 }

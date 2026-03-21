@@ -16,34 +16,29 @@ struct OutfitDetailView: View {
                         if outfit.isAIGenerated {
                             Image(systemName: "sparkles")
                                 .font(.caption)
-                                .foregroundStyle(.purple)
+                                .foregroundStyle(Theme.champagne)
                         }
                         Text(outfit.displayName)
                             .font(.title2)
-                            .fontWeight(.semibold)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.primaryText)
                     }
 
                     HStack(spacing: 8) {
                         if let occasion = outfit.occasion {
                             Text(occasion)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.accentColor.opacity(0.15))
-                                .foregroundStyle(Color.accentColor)
-                                .clipShape(Capsule())
+                                .themePill()
                         }
 
                         Text("\(outfit.items.count) item\(outfit.items.count == 1 ? "" : "s")")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
 
                         Spacer()
 
                         Text(outfit.createdAt.formatted(.dateTime.month().day().year()))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 }
                 .padding(.horizontal)
@@ -62,20 +57,25 @@ struct OutfitDetailView: View {
                         Text("Why this works")
                             .font(.caption)
                             .fontWeight(.medium)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                         Text(reasoning)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.secondarySystemGroupedBackground))
+                    .background(Theme.cardFill)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Theme.cardBorder, lineWidth: 0.5)
+                    )
                     .padding(.horizontal)
                 }
             }
             .padding(.vertical)
         }
+        .background(Theme.screenBackground)
         .navigationTitle("Outfit")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -86,7 +86,7 @@ struct OutfitDetailView: View {
                         try? modelContext.save()
                     } label: {
                         Image(systemName: outfit.isFavorite ? "star.fill" : "star")
-                            .foregroundStyle(outfit.isFavorite ? .yellow : .secondary)
+                            .foregroundStyle(outfit.isFavorite ? Theme.champagne : Theme.secondaryText)
                     }
 
                     Button(role: .destructive) {
@@ -124,7 +124,7 @@ private struct OutfitItemCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             } else {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.secondary.opacity(0.15))
+                    .fill(Theme.placeholderFill)
                     .frame(width: 64, height: 64)
                     .overlay {
                         Circle()
@@ -138,36 +138,29 @@ private struct OutfitItemCard: View {
                 Text(item.type)
                     .font(.subheadline)
                     .fontWeight(.medium)
+                    .foregroundStyle(Theme.primaryText)
 
                 HStack(spacing: 6) {
                     Circle()
                         .fill(ColorMapping.color(for: item.primaryColor))
                         .frame(width: 12, height: 12)
-                        .overlay(Circle().stroke(Color.secondary.opacity(0.3), lineWidth: 0.5))
+                        .overlay(Circle().stroke(Theme.border.opacity(0.5), lineWidth: 0.5))
                     Text(item.primaryColor)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                 }
 
                 Text(item.formality)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
 
             Spacer()
 
             // Category label
             Text(item.category)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.secondary.opacity(0.12))
-                .clipShape(Capsule())
+                .themeTag()
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .themeCard()
     }
 }

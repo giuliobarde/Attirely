@@ -69,7 +69,7 @@ struct ItemDetailView: View {
                        original != item.itemDescription {
                         Text("AI detected: \(original)")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 }
             }
@@ -95,6 +95,8 @@ struct ItemDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.screenBackground)
         .navigationTitle(item.type)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -128,7 +130,7 @@ struct ItemDetailView: View {
                original != value.wrappedValue {
                 Text("AI detected: \(original)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
         }
     }
@@ -143,7 +145,7 @@ struct ItemDetailView: View {
                original != (value.wrappedValue ?? "") {
                 Text("AI detected: \(original)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
         }
     }

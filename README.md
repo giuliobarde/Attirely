@@ -11,6 +11,7 @@ Attirely is an iOS app that uses AI-powered vision to identify and analyze cloth
 - **Outfit generation** — create outfits manually by picking items, or let AI suggest up to 3 coordinated outfits based on occasion and season
 - **Outfit display** — card-based layout with items ordered by layer (outerwear → tops → bottoms → footwear → accessories)
 - **Favorites** — star outfits for quick access
+- **Brand design system** — centralized theme with Obsidian/Ivory/Stone/Champagne/Blush palette, reusable card/pill/tag modifiers, and consistent typography across all views
 
 ## Setup
 
@@ -70,6 +71,7 @@ Attirely/
 │   ├── ItemPickerSheet.swift          # Manual outfit item picker
 │   └── AddItemView.swift             # Manual wardrobe item entry
 ├── Helpers/
+│   ├── Theme.swift                    # Brand design system (colors, modifiers, styles)
 │   ├── ColorMapping.swift             # Color name → SwiftUI Color
 │   ├── ClothingItemDisplayable.swift  # Protocol for DTO + Model
 │   └── OutfitLayerOrder.swift         # Category layer sorting

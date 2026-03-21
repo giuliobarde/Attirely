@@ -22,7 +22,7 @@ struct DuplicateWarningBanner: View {
 
                 Text("\(results.count) potential match\(results.count == 1 ? "" : "es")")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
 
             Spacer()

@@ -19,11 +19,13 @@ struct WardrobeView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(WardrobeCategory.allCases, id: \.self) { category in
-                            Button(category.rawValue) {
+                            Button {
                                 viewModel.selectedCategory = category
+                            } label: {
+                                Text(category.rawValue)
+                                    .themePill(isActive: viewModel.selectedCategory == category)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(viewModel.selectedCategory == category ? .accentColor : .secondary)
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)
@@ -68,6 +70,7 @@ struct WardrobeView: View {
                     }
                 }
             }
+            .background(Theme.screenBackground)
             .navigationTitle("Wardrobe")
             .searchable(text: $viewModel.searchText)
             .toolbar {
@@ -115,7 +118,7 @@ struct WardrobeGridCell: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.secondary.opacity(0.15))
+                    .fill(Theme.placeholderFill)
                     .frame(height: 150)
                     .overlay {
                         VStack(spacing: 4) {
@@ -123,7 +126,7 @@ struct WardrobeGridCell: View {
                                 .fill(ColorMapping.color(for: item.primaryColor))
                                 .frame(width: 32, height: 32)
                             Image(systemName: "tshirt")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.secondaryText)
                         }
                     }
             }
@@ -131,11 +134,12 @@ struct WardrobeGridCell: View {
             Text(item.type)
                 .font(.caption)
                 .fontWeight(.medium)
+                .foregroundStyle(Theme.primaryText)
                 .lineLimit(1)
 
             Text(item.category)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryText)
         }
     }
 }

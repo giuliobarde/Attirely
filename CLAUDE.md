@@ -60,6 +60,7 @@ Attirely/
 │   ├── ItemPickerSheet.swift       # Manual outfit item selection
 │   └── AddItemView.swift           # Manual wardrobe item entry form
 ├── Helpers/
+│   ├── Theme.swift                 # Brand design system: color tokens, ViewModifiers, ButtonStyles
 │   ├── ColorMapping.swift          # Color name → SwiftUI Color
 │   ├── ClothingItemDisplayable.swift  # Protocol for DTO + Model
 │   └── OutfitLayerOrder.swift      # Category → layer sort order
@@ -101,7 +102,8 @@ Attirely/
 
 ### Helpers (`Helpers/`)
 - Pure utility functions with no side effects. No state, no I/O.
-- Example: `ColorMapping` translates color name strings to SwiftUI `Color` values.
+- `Theme` — brand design system: color tokens (`Theme.obsidian`, `.ivory`, `.stone`, `.champagne`, `.blush`, `.border`), semantic aliases (`Theme.primaryText`, `.secondaryText`, `.screenBackground`, `.cardFill`, `.cardBorder`), ViewModifiers (`ThemeCardModifier`, `ThemePillModifier`, `ThemeTagModifier`), and ButtonStyles (`ThemePrimaryButtonStyle`, `ThemeSecondaryButtonStyle`). All views use these tokens instead of hardcoded colors.
+- `ColorMapping` translates color name strings to SwiftUI `Color` values (for clothing item display, not UI theme).
 
 ## Swift & Concurrency Conventions
 
@@ -162,7 +164,7 @@ All prompts (clothing analysis, duplicate detection, outfit generation) live as 
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.3) ✅
+## Current State (v0.3.0) ✅
 - Camera and photo library input
 - Claude vision API integration for clothing detection
 - Results displayed as cards with all attributes
@@ -179,6 +181,7 @@ All prompts (clothing analysis, duplicate detection, outfit generation) live as 
 - Layer ordering via `OutfitLayerOrder` helper — deterministic sort by category, designed to be reusable by v0.5 visual compositor
 - **Manual item entry**: add wardrobe items manually via form with Pickers for all attributes, optional photo attachment
 - Error handling (missing key, network, API, empty results, insufficient wardrobe)
+- **Brand design system**: centralized `Theme.swift` with color tokens (Obsidian, Ivory, Stone, Champagne, Blush, Border), reusable ViewModifiers (`.themeCard()`, `.themePill()`, `.themeTag()`), and ButtonStyles (`.themePrimary`, `.themeSecondary`). CHAMPAGNE set as AccentColor globally. IVORY screen backgrounds, glass-tinted cards, and consistent typography applied across all views.
 
 ## Roadmap
 

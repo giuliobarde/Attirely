@@ -45,7 +45,7 @@ struct OutfitGenerationContextSheet: View {
                                 Spacer()
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.themePrimary)
                     }
                 }
 
@@ -57,6 +57,8 @@ struct OutfitGenerationContextSheet: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.screenBackground)
             .navigationTitle("AI Outfit Generator")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

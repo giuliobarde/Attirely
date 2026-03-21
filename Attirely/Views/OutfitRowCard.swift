@@ -10,6 +10,7 @@ struct OutfitRowCard: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(outfit.displayName)
                     .font(.headline)
+                    .foregroundStyle(Theme.primaryText)
                     .lineLimit(1)
 
                 Spacer()
@@ -17,14 +18,14 @@ struct OutfitRowCard: View {
                 if outfit.isAIGenerated {
                     Image(systemName: "sparkles")
                         .font(.caption)
-                        .foregroundStyle(.purple)
+                        .foregroundStyle(Theme.champagne)
                 }
 
                 Button {
                     onFavoriteToggle()
                 } label: {
                     Image(systemName: outfit.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(outfit.isFavorite ? .yellow : .secondary)
+                        .foregroundStyle(outfit.isFavorite ? Theme.champagne : Theme.secondaryText)
                 }
                 .buttonStyle(.plain)
             }
@@ -33,18 +34,12 @@ struct OutfitRowCard: View {
             HStack(spacing: 8) {
                 if let occasion = outfit.occasion {
                     Text(occasion)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.accentColor.opacity(0.15))
-                        .foregroundStyle(Color.accentColor)
-                        .clipShape(Capsule())
+                        .themePill()
                 }
 
                 Text("\(outfit.items.count) item\(outfit.items.count == 1 ? "" : "s")")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryText)
             }
 
             // Thumbnail strip (up to 4 items in layer order)
@@ -59,7 +54,7 @@ struct OutfitRowCard: View {
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                     } else {
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.secondary.opacity(0.15))
+                            .fill(Theme.placeholderFill)
                             .frame(width: 48, height: 48)
                             .overlay {
                                 Circle()
@@ -72,16 +67,13 @@ struct OutfitRowCard: View {
                 if outfit.items.count > 4 {
                     Text("+\(outfit.items.count - 4)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondaryText)
                         .frame(width: 48, height: 48)
-                        .background(Color.secondary.opacity(0.1))
+                        .background(Theme.placeholderFill)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
             }
         }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .themeCard()
     }
 }
