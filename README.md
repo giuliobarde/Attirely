@@ -1,6 +1,6 @@
-# Attierly
+# Attirely
 
-Attierly is an iOS app that uses AI-powered vision to identify and analyze clothing items from photos, build a persistent digital wardrobe, and generate coordinated outfits. Take a picture or choose one from your library, and the app will detect each clothing item with detailed attributes — then help you put together outfits manually or with AI assistance. Powered by the Anthropic Claude API.
+Attirely is an iOS app that uses AI-powered vision to identify and analyze clothing items from photos, build a persistent digital wardrobe, and generate coordinated outfits. Take a picture or choose one from your library, and the app will detect each clothing item with detailed attributes — then help you put together outfits manually or with AI assistance. Powered by the Anthropic Claude API.
 
 ## Features
 
@@ -15,7 +15,7 @@ Attierly is an iOS app that uses AI-powered vision to identify and analyze cloth
 ## Setup
 
 1. Open the project in Xcode 26+
-2. In `Attierly/Resources/`, duplicate `Config.plist.example` and rename the copy to `Config.plist`
+2. In `Attirely/Resources/`, duplicate `Config.plist.example` and rename the copy to `Config.plist`
 3. Open `Config.plist` and replace `your-api-key-here` with your [Anthropic API key](https://console.anthropic.com/)
 4. Build and run on an iOS 26+ device or simulator
 
@@ -37,8 +37,8 @@ If running on a device, the app will request camera permission on first use.
 ## Project Structure
 
 ```
-Attierly/
-├── App/AttierlyApp.swift              # App entry point + model container
+Attirely/
+├── App/AttirelyApp.swift              # App entry point + model container
 ├── Models/
 │   ├── ClothingItem.swift             # Clothing item data model
 │   ├── ClothingItemDTO.swift          # API response parsing

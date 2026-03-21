@@ -1,4 +1,4 @@
-# Attierly — Project Guide
+# Attirely — Project Guide
 
 ## Documentation Rules
 After completing any code changes, **always update both `CLAUDE.md` and `README.md`** to reflect the current state of the project. This includes:
@@ -8,7 +8,7 @@ After completing any code changes, **always update both `CLAUDE.md` and `README.
 - New API methods or prompt changes → update **API Integration Details** in CLAUDE.md
 - Roadmap items that are now implemented → move from **Roadmap** to **Current State**
 
-## What is Attierly?
+## What is Attirely?
 A wardrobe management iOS app. Users scan clothing via camera/photo library, the app identifies items using Claude's vision API, and builds a persistent digital wardrobe. Users can generate outfits manually or with AI assistance.
 
 ## Tech Stack
@@ -21,14 +21,14 @@ A wardrobe management iOS app. Users scan clothing via camera/photo library, the
 - **Dependencies:** None. Apple frameworks + URLSession only. Do NOT add SPM packages, CocoaPods, or any third-party dependencies without explicit approval.
 
 ## Build & Run
-1. Copy `Attierly/Resources/Config.plist.example` → `Config.plist`, add Anthropic API key
+1. Copy `Attirely/Resources/Config.plist.example` → `Config.plist`, add Anthropic API key
 2. Open in Xcode 26+, build and run (Cmd+R)
 3. Camera requires physical device; simulator supports photo library only
 
 ## Project Structure
 ```
-Attierly/
-├── App/AttierlyApp.swift
+Attirely/
+├── App/AttirelyApp.swift
 ├── Models/
 │   ├── ClothingItem.swift          # SwiftData @Model (persistent)
 │   ├── ClothingItemDTO.swift       # Codable struct (API parsing)
@@ -69,7 +69,7 @@ Attierly/
 ```
 
 ## Xcode Project Conventions
-- `PBXFileSystemSynchronizedRootGroup` is enabled — new source files added to `Attierly/` are auto-detected. Do NOT manually edit `.pbxproj` to add source files.
+- `PBXFileSystemSynchronizedRootGroup` is enabled — new source files added to `Attirely/` are auto-detected. Do NOT manually edit `.pbxproj` to add source files.
 - `GENERATE_INFOPLIST_FILE = YES` — add Info.plist keys via `INFOPLIST_KEY_*` build settings, not a standalone Info.plist file.
 - `Config.plist` is git-ignored (contains API key). Never commit it.
 

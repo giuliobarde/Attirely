@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct AttierlyApp: App {
+struct AttirelyApp: App {
     var body: some Scene {
         WindowGroup {
             MainTabView()

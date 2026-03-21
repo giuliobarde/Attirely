@@ -18,7 +18,7 @@ struct HomeView: View {
                         .font(.system(size: 56))
                         .foregroundStyle(.tint)
 
-                    Text("Attierly")
+                    Text("Attirely")
                         .font(.largeTitle.bold())
 
                     Text("Identify clothing with AI")
