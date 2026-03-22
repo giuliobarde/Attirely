@@ -8,7 +8,7 @@ A wardrobe management iOS app. Users scan clothing via camera/photo library, the
 - **UI:** SwiftUI
 - **Min Target:** iOS 26.2
 - **Storage:** SwiftData
-- **AI:** Anthropic Claude API (vision + outfit generation)
+- **AI:** Anthropic Claude API (vision + outfit generation + conversational style agent)
 - **Architecture:** MVVM
 - **Dependencies:** None. Apple frameworks + URLSession only. Do NOT add SPM packages, CocoaPods, or any third-party dependencies without explicit approval.
 
@@ -259,7 +259,67 @@ StyleSummary (SwiftData @Model)
 
 ## Roadmap
 
-### v0.6 — Image Extraction & Confidence
+### v0.6 — Style Agent (Chat)
+- New **Agent tab** (tab order: Scan | Outfits | Agent | Wardrobe | Profile) with a conversational chat interface
+- Multi-turn conversation with Claude for style discussion, outfit generation, and wardrobe exploration
+- **Ephemeral sessions** — conversation history lives in-memory only (`AgentViewModel`), no persistence
+- **Shared generation core** — `AgentService` (UI-agnostic) accepts structured input (wardrobe, weather, preferences, user intent) and returns structured output. Both chat UI and future Siri surface use the same engine
+- Generation core supports **single-turn mode** (one request → one response, for Siri later) and **multi-turn mode** (ongoing conversation with message history)
+
+#### Agent Tools (Claude tool_use)
+The agent has tools it can invoke mid-conversation:
+- `generateOutfit(occasion?, constraints?)` — generates an outfit from the user's wardrobe; weather is always fetched fresh and required
+- `searchWardrobe(query)` — finds specific items matching a description/criteria
+- `updateStyleInsight(insight, confidence)` — captures durable style preference signals ("leaning minimalist", "never wears yellow") to queue for `StyleSummary` updates
+- Additional tools may be added as needed
+
+#### Context Injection Strategy
+- **Always injected** (system prompt): weather snapshot, comfort preferences, style summary, wardrobe stats
+- **Loaded on demand** (via tool use): full wardrobe items (when generating/searching), recent outfits (for dedup)
+- **Compact format** for wardrobe in context: one-line-per-item (`"ID | Navy Blazer | Outerwear/Jacket | Navy/None | Wool | Semi-Formal | Fall,Winter"`) to manage token budget
+
+#### Style Insight Extraction
+- Instead of storing chats, extract **deltas from baseline** — events that vary from the user's established preferences
+- Inline via `updateStyleInsight` tool use: Claude detects meaningful preference signals mid-conversation and calls the tool
+- Surface a subtle confirmation in chat ("Noted — you're leaning minimalist lately")
+- Insights accumulate and fold into the next `StyleSummary` analysis rather than directly rewriting fields
+
+#### Chat UI
+- Standard chat interface with messages list and text input
+- **Outfit cards inline** — reuse `OutfitRowCard` embedded in chat flow when the agent generates an outfit
+- **Save action** — inline "Save to Outfits" button on generated outfits (ephemeral chat, durable outfit)
+- **Item references** — tappable clothing item mentions linking to `ItemDetailView`
+- **Weather context** — subtle header/chip showing current weather the agent is working with
+- **Conversation starters** — empty state with suggested prompts ("What should I wear today?", "Help me plan outfits for a trip", "What's missing from my wardrobe?")
+
+#### New Files
+- `Models/ChatMessage.swift` — ephemeral struct for conversation messages (role, content, optional tool results)
+- `Models/AgentToolDTO.swift` — Codable structs for agent tool use requests/responses
+- `Services/AgentService.swift` — UI-agnostic generation core, multi-turn Claude API interaction with tool definitions
+- `ViewModels/AgentViewModel.swift` — conversation state, message history, tool result handling
+- `Views/AgentView.swift` — chat interface
+- `Views/AgentMessageBubble.swift` — individual message rendering (text, outfit cards, insight confirmations)
+
+#### Response Format
+- `OutfitSuggestionDTO` extended with `spokenSummary: String?` — 1-2 sentence natural-speech description of the outfit, generated alongside `reasoning`. Costs minimal tokens, prepares for Siri voice output
+
+### v0.7 — Siri & HomePod Integration
+- **App Intents** framework (iOS 16+) wrapping the same `AgentService` generation core
+- Two intents:
+  - **"What should I wear today?"** — weather + preferences + wardrobe → outfit → spoken response
+  - **"What should I wear to [occasion]?"** — occasion-constrained generation → spoken response
+- Single-turn mode only — no back-and-forth dialog flows for v1
+- Uses `spokenSummary` from outfit generation as Siri's voice response
+- Weather is mandatory; falls back to seasonal defaults if unavailable
+- Accesses SwiftData store from App Intent extension process
+- HomePod triggers via Siri intent forwarding to iPhone
+
+#### Siri-Specific Considerations
+- **Latency** — consider pre-generating a "daily suggestion" on app open that Siri can read back instantly, with on-demand generation as fallback
+- **Lean context** — single-turn loads everything at once (no progressive loading like chat), so compact wardrobe format is critical
+- **Graceful degradation** — if weather unavailable, fall back to seasonal defaults based on date rather than failing
+
+### v0.8 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images
 - Background removal via Apple Vision framework (`VNGenerateForegroundInstanceMaskRequest`)
 - Attribute confidence system: Claude returns per-attribute confidence (`observed`/`inferred`/`assumed`), stored in `attributeConfidence: String?` on `ClothingItem`
@@ -267,7 +327,7 @@ StyleSummary (SwiftData @Model)
 - Re-scan merge workflow: user adds better photo, system re-runs and merges (user edits preserved, AI fields updated)
 - New field: `cutoutImagePath: String?` on `ClothingItem`
 
-### v0.7 — Visual Outfit Compositor
+### v0.9 — Visual Outfit Compositor
 - Replace card-based outfit layout with layered visual composition (items stacked as worn on a body)
 - Two sub-problems: isolation (clean cutouts) and normalization (consistent perspective/scale/lighting across different source photos)
 - Planned approach: generative AI to transform source photos into standardized flat-lay product images, then composite via category-based anchor points and z-ordering
