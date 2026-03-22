@@ -8,7 +8,7 @@ Attirely is an iOS app that uses AI-powered vision to identify and analyze cloth
 - **Digital wardrobe** — persistent storage with grid/list views, category filtering, search, and full item editing
 - **Manual item entry** — add items to your wardrobe manually via a form with optional photo attachment
 - **Duplicate detection** — pre-filters by category+color, then uses Claude to classify same/similar/different items
-- **Outfit generation** — create outfits manually by picking items, or let AI suggest up to 3 coordinated outfits based on occasion, season, and current weather
+- **Outfit generation** — create outfits manually by picking items, or let AI suggest a focused single outfit based on occasion, season, and current weather, with deduplication against existing outfits
 - **Weather-aware outfits** — real-time weather via WeatherKit (Open-Meteo fallback), compact toolbar indicator, weather detail sheet with hourly forecast, AI adapts outfit suggestions to temperature, precipitation, and conditions
 - **Outfit display** — card-based layout with items ordered by layer (outerwear → tops → bottoms → footwear → accessories)
 - **Favorites** — star outfits for quick access

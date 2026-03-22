@@ -82,7 +82,8 @@ struct OutfitsView: View {
             OutfitGenerationContextSheet(
                 viewModel: viewModel,
                 wardrobeItems: wardrobeItems,
-                weatherViewModel: weatherViewModel
+                weatherViewModel: weatherViewModel,
+                userProfile: profiles.first
             )
         }
         .sheet(isPresented: $viewModel.isShowingItemPicker) {
@@ -98,19 +99,7 @@ struct OutfitsView: View {
             viewModel.styleViewModel = styleViewModel
             styleViewModel.modelContext = modelContext
 
-            // Build richer style context when AI-enriched
-            if let summary = styleSummaries.first, summary.isAIEnriched {
-                var ctx = "Overall: \(summary.overallIdentity)"
-                for mode in summary.styleModesDecoded {
-                    ctx += "\n- \(mode.name) (\(mode.formality)): \(mode.description). Colors: \(mode.colorPalette.joined(separator: ", "))"
-                }
-                if let weather = summary.weatherBehavior {
-                    ctx += "\nWeather behavior: \(weather)"
-                }
-                viewModel.styleSummaryText = ctx
-            } else {
-                viewModel.styleSummaryText = styleSummaries.first?.overallIdentity
-            }
+            viewModel.updateStyleContext(from: styleSummaries.first)
         }
     }
 

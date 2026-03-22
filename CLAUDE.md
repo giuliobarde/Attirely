@@ -152,22 +152,25 @@ Attirely/
 ### Outfit Generation API
 - Text-only request (no image) — sends wardrobe item attributes with UUIDs
 - Returns JSON array of `OutfitSuggestionDTO` with `name`, `occasion`, `item_ids`, `reasoning`
+- **Generates exactly 1 outfit per request** — focused single recommendation
 - Prompt enforces: 3-6 items per outfit, exactly one footwear, max 3-4 colors, max 2 patterns, consistent formality
 - Weather-adaptive rules: temperature-based layering/fabric guidance, precipitation awareness, UV consideration
-- Optional `weatherContext` parameter appended to prompt with current conditions
+- **Prompt ordering**: comfort constraints and style summary appear BEFORE the item list (after rules), then items, then dedup section — ensures constraints are prominent in long prompts
 - **Comfort preferences** injected as hard constraints (override style preferences when conflicting)
-- **Style summary** optionally appended to prompt for aesthetic alignment
+- **Style summary** optionally included for aesthetic alignment
+- **Deduplication**: `existingOutfitItemSets` parameter passes sorted item-ID arrays for up to 20 existing outfits. Prompt instructs AI not to suggest duplicate combinations.
+- **Item match validation**: client requires minimum 3 matched items (or all suggested if fewer than 3) before saving. Degraded outfits with hallucinated IDs are skipped.
 - Uses 2048 max tokens (vs 4096 for vision analysis)
-- **Planned improvement**: generate 1 outfit per request (not 3), and include existing outfit item-ID sets in the prompt to prevent duplicate suggestions
 
 ### Style Analysis API
 - Text-only request — sends wardrobe item attributes, outfit compositions (grouped by favorited → manual → AI-generated), and previous style summary (for incremental analysis)
-- Returns structured JSON with: `overallIdentity`, `styleModes` (array of detected modes with name/description/colorPalette/formality), `temporalNotes` (observed trends/phase momentum), `gapObservations`
-- **Initial analysis** prompt: full wardrobe data + outfit data, no prior summary
-- **Incremental analysis** prompt: includes previous summary as stable baseline, only new items/outfits since last analysis. Prompt explicitly instructs: "The existing profile is the baseline. Only adjust conclusions where the new evidence is clearly compelling. Style identity is stable — do not overreact to a single new purchase."
+- Returns structured JSON with: `overallIdentity`, `styleModes` (array of detected modes with name/description/colorPalette/formality, defaults to empty array if null), `temporalNotes` (observed trends/phase momentum), `gapObservations`, `weatherBehavior`
+- **Initial analysis** prompt: full wardrobe data (capped at 60 items) + outfit data, no prior summary
+- **Incremental analysis** prompt: three-tier item data — (1) favorite items (appear in favorited outfits, full detail regardless of age), (2) new items since `lastAnalyzedAt` (full detail), (3) existing items (compact category+color distribution summary). Previous summary included with full mode details (description, colorPalette, formality) so AI can preserve/evolve modes. Prompt explicitly instructs: "The existing profile is the baseline. Only adjust conclusions where the new evidence is clearly compelling."
 - **Favorited outfits** are the highest-weight signal — separated and emphasized in the prompt above manual outfits and AI-generated outfits
-- **Weather-relative behavior**: outfit weather snapshots (temperature + month) are included so the AI can detect seasonal-relative dressing patterns (e.g., "dresses warmer than temperature suggests in early spring")
+- **Weather-relative behavior**: outfit weather snapshots (temperature + month) are included so the AI can detect seasonal-relative dressing patterns
 - If user has edited the style summary (`isUserEdited` flag), the edited version is used as the baseline for incremental analysis, with a note in the prompt that the user has personally refined it
+- Style merge always overwrites `temporalNotes`, `gapObservations`, `weatherBehavior` (null clears stale values)
 - Uses 2048 max tokens
 
 ### Weather API
@@ -202,7 +205,7 @@ All prompts (clothing analysis, duplicate detection, outfit generation, style an
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.5b) ✅
+## Current State (v0.5c) ✅
 - Camera and photo library input
 - Claude vision API integration for clothing detection
 - Results displayed as cards with all attributes
@@ -238,31 +241,17 @@ All prompts (clothing analysis, duplicate detection, outfit generation, style an
 - **Enriched style profile display**: Profile page shows AI-enriched summary with style mode cards (name, formality tag, description, color palette swatches via `ColorMapping`), seasonal patterns, gap observations, weather style sections. Non-enriched state shows progress bar toward 8-item threshold + "Analyze My Style" button.
 - **Richer outfit generation context**: when AI-enriched summary exists, outfit generation receives full style context (overall identity + each mode's name/formality/description/colors + weather behavior) instead of just the overall identity text.
 - **Cross-VM style triggers**: `StyleViewModel` shared across tabs via `MainTabView`. `ScanViewModel` triggers analysis after saving items. `OutfitViewModel` triggers after manual outfit creation, favoriting, and AI generation.
+- **v0.5c hardening — incremental style analysis**: `analyzeStyle()` now sends three tiers of item data for incremental analysis — (1) favorite items (in favorited outfits, full detail), (2) new items since last analysis (full detail), (3) existing items (compact category+color summary). Initial analysis still sends all items capped at 60. Previous summary now includes full mode details (description, colorPalette, formality) for preservation/evolution.
+- **v0.5c hardening — style merge null clearing**: `StyleViewModel` merge now always overwrites `temporalNotes`, `gapObservations`, `weatherBehavior` from the analysis result, allowing null to clear stale observations (e.g., filled wardrobe gaps).
+- **v0.5c hardening — resilient DTO**: `StyleAnalysisDTO.styleModes` defaults to empty array via custom decoder if Claude returns null, preventing parse failure from wasting the API call.
+- **v0.5c hardening — single outfit generation**: prompt requests exactly 1 outfit per API call (was "up to 3"). Focused single recommendation.
+- **v0.5c hardening — outfit deduplication**: `generateOutfits()` accepts `existingOutfitItemSets` parameter. `OutfitViewModel` fetches existing outfits, maps to sorted item-ID sets, passes to the service. Prompt instructs AI not to suggest duplicate combinations.
+- **v0.5c hardening — prompt reorder**: comfort constraints and style summary now appear BEFORE the item list in the outfit generation prompt (after rules, before items) so they're more prominent in long prompts.
+- **v0.5c hardening — outfit item validation**: minimum match threshold of 3 items (or all suggested if fewer than 3). Degraded outfits with hallucinated IDs are skipped, with error message if all suggestions fail.
+- **v0.5c hardening — temperature display fix**: `OutfitGenerationContextSheet` now uses `TemperatureFormatter` respecting user's °C/°F preference (was hardcoded °C).
+- **v0.5c hardening — MVVM fix**: style context string construction moved from `OutfitsView` to `OutfitViewModel.updateStyleContext(from:)`.
 
 ## Roadmap
-
-### Outfit Generation Improvements (near-term)
-- Generate only **one** outfit at a time instead of up to 3 — focused single recommendation per request
-- **Deduplicate** against existing outfits — before generating, pass existing outfit item-ID sets to the prompt so the AI avoids suggesting an outfit combination that already exists in the user's collection
-- Requires changes to: `AnthropicService.generateOutfits()` prompt (request 1 outfit, add dedup context), `OutfitViewModel.generateOutfits()` (pass existing outfit item-IDs)
-
-### v0.5 — Style Intelligence
-
-#### v0.5a — Data Model & Style Questionnaire ✅ (IMPLEMENTED)
-- `StyleSummary` SwiftData @Model, `UserProfile` questionnaire fields, `Outfit` weather snapshot fields
-- Style & Comfort questionnaire UI on Profile page (7 fields with tag grid for style identity)
-- Template-based summary generation via `StyleSummaryTemplate` helper
-- Weather snapshot capture on outfit creation/favoriting
-- Comfort preferences injected as hard constraints in outfit generation prompt
-
-#### v0.5b — AI Style Analysis ✅ (IMPLEMENTED)
-- `AnthropicService.analyzeStyle()` with tiered prompt (favorited > manual > AI-generated outfits)
-- `StyleAnalysisDTO` / `StyleModeDTO` for structured AI response parsing
-- `StyleViewModel` with debounce (30s + count deltas), auto-triggers, and force mode
-- Enriched Profile page: style mode cards with color swatches, temporal/gap/weather sections
-- Progress bar toward 8-item AI analysis threshold for non-enriched state
-- Cross-VM wiring: `StyleViewModel` shared via `MainTabView`, triggers in `ScanViewModel` and `OutfitViewModel`
-- Richer style context passed to outfit generation when AI-enriched summary exists
 
 ### v0.6 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images stored separately from the source scan image

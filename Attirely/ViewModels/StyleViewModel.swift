@@ -81,9 +81,9 @@ class StyleViewModel {
                 if let existing = existingSummary {
                     existing.overallIdentity = analysis.overallIdentity
                     existing.styleModesDecoded = analysis.styleModes
-                    if let temporal = analysis.temporalNotes { existing.temporalNotes = temporal }
-                    if let gaps = analysis.gapObservations { existing.gapObservations = gaps }
-                    if let weather = analysis.weatherBehavior { existing.weatherBehavior = weather }
+                    existing.temporalNotes = analysis.temporalNotes
+                    existing.gapObservations = analysis.gapObservations
+                    existing.weatherBehavior = analysis.weatherBehavior
                     existing.lastAnalyzedAt = Date()
                     existing.itemCountAtLastAnalysis = items.count
                     existing.outfitCountAtLastAnalysis = outfits.count

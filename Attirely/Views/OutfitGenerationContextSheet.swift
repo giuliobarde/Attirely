@@ -4,6 +4,7 @@ struct OutfitGenerationContextSheet: View {
     @Bindable var viewModel: OutfitViewModel
     let wardrobeItems: [ClothingItem]
     var weatherViewModel: WeatherViewModel?
+    var userProfile: UserProfile?
     @Environment(\.dismiss) private var dismiss
 
     private let occasions = ["Casual", "Smart Casual", "Business Casual", "Business", "Formal"]
@@ -19,7 +20,7 @@ struct OutfitGenerationContextSheet: View {
                                 .font(.title3)
                                 .foregroundStyle(Theme.champagne)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(String(format: "%.0f°C", snapshot.current.temperature)) — \(snapshot.current.conditionDescription)")
+                                Text("\(TemperatureFormatter.format(snapshot.current.temperature, unit: userProfile?.temperatureUnit ?? .celsius)) — \(snapshot.current.conditionDescription)")
                                     .font(.subheadline)
                                     .foregroundStyle(Theme.primaryText)
                                 if let city = snapshot.locationName {

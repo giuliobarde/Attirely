@@ -110,6 +110,12 @@ class OutfitViewModel {
         isGenerating = true
         errorMessage = nil
 
+        // Collect existing outfit item-ID sets for dedup
+        let existingOutfits = (try? modelContext.fetch(FetchDescriptor<Outfit>())) ?? []
+        let existingItemSets = existingOutfits.map { outfit in
+            outfit.items.map { $0.id.uuidString }.sorted()
+        }
+
         Task {
             do {
                 let suggestions = try await AnthropicService.generateOutfits(
@@ -118,7 +124,8 @@ class OutfitViewModel {
                     season: selectedSeason,
                     weatherContext: weatherViewModel?.weatherContextString,
                     comfortPreferences: comfortPreferencesString(from: userProfile),
-                    styleSummary: styleSummaryText
+                    styleSummary: styleSummaryText,
+                    existingOutfitItemSets: existingItemSets
                 )
 
                 var created: [Outfit] = []
@@ -126,7 +133,9 @@ class OutfitViewModel {
                     let matchedItems = allItems.filter {
                         suggestion.itemIDs.contains($0.id.uuidString)
                     }
-                    guard !matchedItems.isEmpty else { continue }
+                    // Require at least 3 matched items, or all suggested if fewer than 3
+                    let minRequired = min(3, suggestion.itemIDs.count)
+                    guard matchedItems.count >= minRequired else { continue }
 
                     let outfit = Outfit(
                         name: suggestion.name,
@@ -138,6 +147,12 @@ class OutfitViewModel {
                     captureWeatherSnapshot(on: outfit)
                     modelContext.insert(outfit)
                     created.append(outfit)
+                }
+
+                if created.isEmpty && !suggestions.isEmpty {
+                    self.errorMessage = "AI suggested items that couldn't be matched to your wardrobe. Try again."
+                    self.isGenerating = false
+                    return
                 }
 
                 try? modelContext.save()
@@ -181,6 +196,23 @@ class OutfitViewModel {
         let items = (try? context.fetch(FetchDescriptor<ClothingItem>())) ?? []
         let outfits = (try? context.fetch(FetchDescriptor<Outfit>())) ?? []
         styleViewModel?.analyzeStyle(items: items, outfits: outfits, profile: userProfile)
+    }
+
+    // MARK: - Style Context
+
+    func updateStyleContext(from summary: StyleSummary?) {
+        guard let summary, summary.isAIEnriched else {
+            styleSummaryText = summary?.overallIdentity
+            return
+        }
+        var ctx = "Overall: \(summary.overallIdentity)"
+        for mode in summary.styleModesDecoded {
+            ctx += "\n- \(mode.name) (\(mode.formality)): \(mode.description). Colors: \(mode.colorPalette.joined(separator: ", "))"
+        }
+        if let weather = summary.weatherBehavior {
+            ctx += "\nWeather behavior: \(weather)"
+        }
+        styleSummaryText = ctx
     }
 
     // MARK: - Comfort Preferences

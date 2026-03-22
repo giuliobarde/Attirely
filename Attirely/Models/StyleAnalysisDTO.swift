@@ -26,4 +26,13 @@ struct StyleAnalysisDTO: Codable {
         case gapObservations = "gap_observations"
         case weatherBehavior = "weather_behavior"
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        overallIdentity = try container.decode(String.self, forKey: .overallIdentity)
+        styleModes = (try? container.decode([StyleModeDTO].self, forKey: .styleModes)) ?? []
+        temporalNotes = try container.decodeIfPresent(String.self, forKey: .temporalNotes)
+        gapObservations = try container.decodeIfPresent(String.self, forKey: .gapObservations)
+        weatherBehavior = try container.decodeIfPresent(String.self, forKey: .weatherBehavior)
+    }
 }

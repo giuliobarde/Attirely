@@ -219,10 +219,10 @@ struct AnthropicService {
     // MARK: - Outfit Generation
 
     private static let outfitGenerationPrompt = """
-    You are a personal stylist. Based on the clothing items listed below, suggest up to 3 complete outfit combinations.
+    You are a personal stylist. Based on the clothing items listed below, suggest exactly 1 complete outfit combination.
 
-    Rules for each outfit:
-    - Each outfit must have 3 to 6 items
+    Rules:
+    - The outfit must have 3 to 6 items
     - Include exactly one pair of footwear (if available)
     - Include either one bottom OR one full body item (dress/jumpsuit), not both
     - Include 1-2 tops (unless a full body item is selected)
@@ -240,8 +240,9 @@ struct AnthropicService {
       - Above 24°C: prioritize lightweight fabrics (linen, cotton), minimize layers
       - If precipitation chance > 50%, prefer items suitable for rain (avoid suede, prefer water-resistant outerwear)
       - If UV index > 6, consider accessories like hats
+    - If existing outfits are listed below, do NOT suggest the same item combination — create something different
 
-    Return ONLY a valid JSON array. Each element must have:
+    Return ONLY a valid JSON array with exactly one element. The element must have:
     - "name": a short, evocative outfit name (e.g., "Weekend Casual", "Office Ready", "Evening Out")
     - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal"
     - "item_ids": array of item id strings from the list below (use ONLY the provided IDs, do not invent new ones)
@@ -256,13 +257,29 @@ struct AnthropicService {
         season: String?,
         weatherContext: String? = nil,
         comfortPreferences: String? = nil,
-        styleSummary: String? = nil
+        styleSummary: String? = nil,
+        existingOutfitItemSets: [[String]] = []
     ) async throws -> [OutfitSuggestionDTO] {
         guard items.count >= 2 else {
             throw AnthropicError.insufficientWardrobe
         }
 
         let apiKey = try ConfigManager.apiKey()
+
+        // Build context BEFORE items so constraints are prominent
+        var contextSection = ""
+
+        if let comfortPreferences {
+            contextSection += "COMFORT CONSTRAINTS (override style preferences when conflicting):\n\(comfortPreferences)\n\n"
+        }
+
+        if let styleSummary {
+            contextSection += "USER STYLE PROFILE (use as guidance):\n\(styleSummary)\n\n"
+        }
+
+        if let occasion { contextSection += "Occasion preference: \(occasion)\n" }
+        if let season { contextSection += "Current season: \(season)\n" }
+        if let weatherContext { contextSection += "Current weather:\n\(weatherContext)\n" }
 
         var itemList = ""
         for item in items {
@@ -274,23 +291,17 @@ struct AnthropicService {
             itemList += " | \(item.itemDescription)\n"
         }
 
-        var contextLine = ""
-
-        // COMFORT CONSTRAINTS (override style preferences when conflicting)
-        if let comfortPreferences {
-            contextLine += "COMFORT CONSTRAINTS (override style preferences when conflicting):\n\(comfortPreferences)\n\n"
+        // Dedup section — existing outfit item-ID sets
+        var dedupSection = ""
+        let relevantSets = existingOutfitItemSets.filter { !$0.isEmpty }
+        if !relevantSets.isEmpty {
+            dedupSection = "\nEXISTING OUTFITS (do NOT suggest these combinations):\n"
+            for (index, ids) in relevantSets.prefix(20).enumerated() {
+                dedupSection += "  Outfit \(index + 1): [\(ids.joined(separator: ", "))]\n"
+            }
         }
 
-        // Style summary as guidance
-        if let styleSummary {
-            contextLine += "USER STYLE PROFILE (use as guidance):\n\(styleSummary)\n\n"
-        }
-
-        if let occasion { contextLine += "Occasion preference: \(occasion)\n" }
-        if let season { contextLine += "Current season: \(season)\n" }
-        if let weatherContext { contextLine += "Current weather:\n\(weatherContext)\n" }
-
-        let fullPrompt = outfitGenerationPrompt + "\n\nAvailable items:\n" + itemList + "\n" + contextLine
+        let fullPrompt = outfitGenerationPrompt + "\n\n" + contextSection + "\nAvailable items:\n" + itemList + dedupSection
 
         let requestBody: [String: Any] = [
             "model": model,
@@ -366,18 +377,46 @@ struct AnthropicService {
 
         let apiKey = try ConfigManager.apiKey()
 
-        // Cap items to most recent 60
-        let cappedItems = Array(items.sorted { $0.createdAt > $1.createdAt }.prefix(60))
+        let isIncremental = existingSummary != nil
+        let lastAnalyzedAt = existingSummary?.lastAnalyzedAt
 
-        var itemList = "WARDROBE ITEMS (\(cappedItems.count) items):\n"
-        for item in cappedItems {
-            itemList += "- \(item.type) | \(item.category) | \(item.primaryColor)"
-            if let secondary = item.secondaryColor {
-                itemList += "/\(secondary)"
+        var itemList: String
+        if isIncremental, let lastAnalyzedAt {
+            // Tier 1: Favorite items — appear in at least one favorited outfit
+            let favoritedOutfitItems = Set(
+                outfits.filter { $0.isFavorite }.flatMap { $0.items }
+                    .map { $0.id }
+            )
+            let favoriteItems = items.filter { favoritedOutfitItems.contains($0.id) }
+
+            // Tier 2: New items since last analysis (excluding favorites already captured)
+            let favoriteIDs = Set(favoriteItems.map { $0.id })
+            let newItems = items.filter {
+                $0.createdAt > lastAnalyzedAt && !favoriteIDs.contains($0.id)
             }
-            itemList += " | \(item.pattern) | \(item.fabricEstimate) | \(item.formality)"
-            itemList += " | seasons:\(item.season.joined(separator: ","))"
-            itemList += " | \(item.itemDescription)\n"
+
+            // Tier 3: Everything else — compact summary
+            let allDetailedIDs = favoriteIDs.union(Set(newItems.map { $0.id }))
+            let existingItems = items.filter { !allDetailedIDs.contains($0.id) }
+
+            itemList = ""
+            if !favoriteItems.isEmpty {
+                itemList += "FAVORITE ITEMS (appear in favorited outfits — highest signal, \(favoriteItems.count) items):\n"
+                itemList += formatItemList(favoriteItems)
+            }
+            if !newItems.isEmpty {
+                itemList += "\nNEW ITEMS SINCE LAST ANALYSIS (\(newItems.count) items):\n"
+                itemList += formatItemList(newItems)
+            }
+            if !existingItems.isEmpty {
+                itemList += "\nEXISTING WARDROBE SUMMARY (\(existingItems.count) items, details omitted — see previous analysis):\n"
+                itemList += formatCompactItemSummary(existingItems)
+            }
+        } else {
+            // Initial analysis: send all items, capped at 60
+            let cappedItems = Array(items.sorted { $0.createdAt > $1.createdAt }.prefix(60))
+            itemList = "WARDROBE ITEMS (\(cappedItems.count) items):\n"
+            itemList += formatItemList(cappedItems)
         }
 
         // Tier outfits by signal strength
@@ -420,7 +459,7 @@ struct AnthropicService {
             }
         }
 
-        // Existing summary for incremental analysis
+        // Existing summary for incremental analysis — send full details so AI can preserve/evolve
         var existingSummarySection = ""
         if let existingSummary {
             existingSummarySection = "\nPREVIOUS ANALYSIS"
@@ -431,9 +470,10 @@ struct AnthropicService {
 
             let modes = existingSummary.styleModesDecoded
             if !modes.isEmpty {
-                existingSummarySection += "Previous style modes: "
-                existingSummarySection += modes.map { $0.name }.joined(separator: ", ")
-                existingSummarySection += "\n"
+                existingSummarySection += "Previous style modes:\n"
+                for mode in modes {
+                    existingSummarySection += "  - \(mode.name) (\(mode.formality)): \(mode.description). Colors: \(mode.colorPalette.joined(separator: ", "))\n"
+                }
             }
             if let temporal = existingSummary.temporalNotes {
                 existingSummarySection += "Previous temporal notes: \(temporal)\n"
@@ -475,6 +515,41 @@ struct AnthropicService {
         }
 
         return analysis
+    }
+
+    private static func formatItemList(_ items: [ClothingItem]) -> String {
+        var result = ""
+        for item in items {
+            result += "- \(item.type) | \(item.category) | \(item.primaryColor)"
+            if let secondary = item.secondaryColor {
+                result += "/\(secondary)"
+            }
+            result += " | \(item.pattern) | \(item.fabricEstimate) | \(item.formality)"
+            result += " | seasons:\(item.season.joined(separator: ","))"
+            result += " | \(item.itemDescription)\n"
+        }
+        return result
+    }
+
+    private static func formatCompactItemSummary(_ items: [ClothingItem]) -> String {
+        // Group by category
+        var categoryGroups: [String: [ClothingItem]] = [:]
+        for item in items {
+            categoryGroups[item.category, default: []].append(item)
+        }
+
+        var result = ""
+        for (category, groupItems) in categoryGroups.sorted(by: { $0.key < $1.key }) {
+            // Count colors within category
+            var colorCounts: [String: Int] = [:]
+            for item in groupItems {
+                colorCounts[item.primaryColor, default: 0] += 1
+            }
+            let topColors = colorCounts.sorted { $0.value > $1.value }.prefix(3)
+                .map { "\($0.key)(\($0.value))" }.joined(separator: ", ")
+            result += "- \(groupItems.count) \(category) items; dominant colors: \(topColors)\n"
+        }
+        return result
     }
 
     private static func formatOutfitList(_ outfits: [Outfit]) -> String {
