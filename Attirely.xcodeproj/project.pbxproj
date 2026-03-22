@@ -7,12 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0697A5F02F6F867500557CA4 /* Attirely-logo.png in Resources */ = {isa = PBXBuildFile; fileRef = 0697A5EF2F6F867500557CA4 /* Attirely-logo.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0697A3B52F6DA21000557CA4 /* Attirely.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Attirely.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		0697A5EF2F6F867500557CA4 /* Attirely-logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Attirely-logo.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -46,7 +44,6 @@
 			isa = PBXGroup;
 			children = (
 				0697A3B52F6DA21000557CA4 /* Attirely.app */,
-				0697A5EF2F6F867500557CA4 /* Attirely-logo.png */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -115,7 +112,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0697A5F02F6F867500557CA4 /* Attirely-logo.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,6 +250,7 @@
 		0697A3C12F6DA21100557CA4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
@@ -288,6 +285,7 @@
 		0697A3C22F6DA21100557CA4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
