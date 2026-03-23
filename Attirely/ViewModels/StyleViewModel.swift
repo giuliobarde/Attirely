@@ -112,4 +112,17 @@ class StyleViewModel {
             self.isAnalyzing = false
         }
     }
+
+    // MARK: - Agent Insight
+
+    func appendAgentInsight(_ insight: String) {
+        guard let context = modelContext,
+              let summary = (try? context.fetch(FetchDescriptor<StyleSummary>()))?.first
+        else { return }
+
+        let existing = summary.gapObservations ?? ""
+        let separator = existing.isEmpty ? "" : "\n"
+        summary.gapObservations = existing + separator + "User preference: " + insight
+        try? context.save()
+    }
 }

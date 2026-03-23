@@ -608,6 +608,36 @@ struct AnthropicService {
         return text
     }
 
+    // MARK: - Agent Request
+
+    static func sendAgentRequest(body: [String: Any], apiKey: String) async throws -> [String: Any] {
+        var request = URLRequest(url: apiURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw AnthropicError.networkError(error)
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw AnthropicError.apiError(httpResponse.statusCode, responseBody)
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AnthropicError.decodingError("Unexpected response structure.")
+        }
+
+        return json
+    }
+
     private static func stripCodeFences(_ text: String) -> String {
         var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if result.hasPrefix("```") {

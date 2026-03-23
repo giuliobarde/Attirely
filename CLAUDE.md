@@ -260,7 +260,7 @@ StyleSummary (SwiftData @Model)
 ## Roadmap
 
 ### v0.6 — Style Agent (Chat)
-- New **Agent tab** (tab order: Scan | Outfits | Agent | Wardrobe | Profile) with a conversational chat interface
+- New **Agent tab** (tab order: Agent | Scan | Outfits | Wardrobe | Profile) with a conversational chat interface
 - Multi-turn conversation with Claude for style discussion, outfit generation, and wardrobe exploration
 - **Ephemeral sessions** — conversation history lives in-memory only (`AgentViewModel`), no persistence
 - **Shared generation core** — `AgentService` (UI-agnostic) accepts structured input (wardrobe, weather, preferences, user intent) and returns structured output. Both chat UI and future Siri surface use the same engine
