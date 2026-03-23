@@ -8,38 +8,22 @@ struct OutfitDetailView: View {
     @State private var showDeleteConfirmation = false
     @State private var isShowingTagPicker = false
 
+    // Edit mode
+    @State private var isEditing = false
+    @State private var editName = ""
+    @State private var editOccasion = ""
+    @State private var editItems: [ClothingItem] = []
+    @State private var isShowingEditItemPicker = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        if outfit.isAIGenerated {
-                            Image(systemName: "sparkles")
-                                .font(.caption)
-                                .foregroundStyle(Theme.champagne)
-                        }
-                        Text(outfit.displayName)
-                            .font(.title2)
-                            .fontWeight(.medium)
-                            .foregroundStyle(Theme.primaryText)
-                    }
-
-                    HStack(spacing: 8) {
-                        if let occasion = outfit.occasion {
-                            Text(occasion)
-                                .themePill()
-                        }
-
-                        Text("\(outfit.items.count) item\(outfit.items.count == 1 ? "" : "s")")
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondaryText)
-
-                        Spacer()
-
-                        Text(outfit.createdAt.formatted(.dateTime.month().day().year()))
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondaryText)
+                    if isEditing {
+                        editHeader
+                    } else {
+                        viewHeader
                     }
                 }
                 .padding(.horizontal)
@@ -67,10 +51,59 @@ struct OutfitDetailView: View {
                 }
                 .padding(.horizontal)
 
+                // Validation warnings
+                if isEditing {
+                    let warnings = OutfitLayerOrder.warnings(for: editItems)
+                    if !warnings.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(warnings, id: \.self) { warning in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                    Text(warning)
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.secondaryText)
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
                 // Items in layer order
                 VStack(spacing: 10) {
-                    ForEach(OutfitLayerOrder.sorted(outfit.items)) { item in
-                        OutfitItemCard(item: item)
+                    let displayItems = isEditing ? editItems : outfit.items
+                    ForEach(OutfitLayerOrder.sorted(displayItems)) { item in
+                        if isEditing {
+                            OutfitItemCard(item: item, onRemove: {
+                                editItems.removeAll { $0.persistentModelID == item.persistentModelID }
+                            })
+                        } else {
+                            OutfitItemCard(item: item)
+                        }
+                    }
+
+                    if isEditing {
+                        Button {
+                            isShowingEditItemPicker = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(Theme.champagne)
+                                Text("Add Items")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.champagne)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Theme.cardFill)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Theme.champagne.opacity(0.3), lineWidth: 1)
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -103,20 +136,40 @@ struct OutfitDetailView: View {
         .navigationTitle("Outfit")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button {
-                        outfit.isFavorite.toggle()
-                        try? modelContext.save()
-                    } label: {
-                        Image(systemName: outfit.isFavorite ? "star.fill" : "star")
-                            .foregroundStyle(outfit.isFavorite ? Theme.champagne : Theme.secondaryText)
-                    }
+            if isEditing {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { cancelEditing() }
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { saveEdits() }
+                        .fontWeight(.medium)
+                        .foregroundStyle(Theme.champagne)
+                        .disabled(editItems.isEmpty)
+                }
+            } else {
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 16) {
+                        Button {
+                            enterEditMode()
+                        } label: {
+                            Image(systemName: "pencil")
+                                .foregroundStyle(Theme.secondaryText)
+                        }
 
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Image(systemName: "trash")
+                        Button {
+                            outfit.isFavorite.toggle()
+                            try? modelContext.save()
+                        } label: {
+                            Image(systemName: outfit.isFavorite ? "star.fill" : "star")
+                                .foregroundStyle(outfit.isFavorite ? Theme.champagne : Theme.secondaryText)
+                        }
+
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
                     }
                 }
             }
@@ -131,6 +184,101 @@ struct OutfitDetailView: View {
         .sheet(isPresented: $isShowingTagPicker) {
             TagPickerSheet(outfit: outfit)
         }
+        .sheet(isPresented: $isShowingEditItemPicker) {
+            OutfitEditItemPicker(currentItems: editItems) { newItems in
+                editItems.append(contentsOf: newItems)
+            }
+        }
+    }
+
+    // MARK: - View Mode Header
+
+    private var viewHeader: some View {
+        Group {
+            HStack {
+                if outfit.isAIGenerated {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(Theme.champagne)
+                }
+                Text(outfit.displayName)
+                    .font(.title2)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Theme.primaryText)
+            }
+
+            HStack(spacing: 8) {
+                if let occasion = outfit.occasion {
+                    Text(occasion)
+                        .themePill()
+                }
+
+                Text("\(outfit.items.count) item\(outfit.items.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Spacer()
+
+                Text(outfit.createdAt.formatted(.dateTime.month().day().year()))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+    }
+
+    // MARK: - Edit Mode Header
+
+    private var editHeader: some View {
+        Group {
+            HStack {
+                if outfit.isAIGenerated {
+                    Image(systemName: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(Theme.champagne)
+                }
+                TextField("Outfit name", text: $editName)
+                    .font(.title2)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Theme.primaryText)
+            }
+
+            HStack(spacing: 8) {
+                TextField("Occasion (optional)", text: $editOccasion)
+                    .font(.caption)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Theme.cardFill)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Theme.cardBorder, lineWidth: 0.5))
+
+                Text("\(editItems.count) item\(editItems.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Edit Mode Actions
+
+    private func enterEditMode() {
+        editName = outfit.name ?? ""
+        editOccasion = outfit.occasion ?? ""
+        editItems = outfit.items
+        isEditing = true
+    }
+
+    private func cancelEditing() {
+        isEditing = false
+    }
+
+    private func saveEdits() {
+        outfit.name = editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editName.trimmingCharacters(in: .whitespacesAndNewlines)
+        outfit.occasion = editOccasion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editOccasion.trimmingCharacters(in: .whitespacesAndNewlines)
+        outfit.items = editItems
+        try? modelContext.save()
+        isEditing = false
     }
 }
 
@@ -138,9 +286,21 @@ struct OutfitDetailView: View {
 
 private struct OutfitItemCard: View {
     let item: ClothingItem
+    var onRemove: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
+            // Remove button in edit mode
+            if let onRemove {
+                Button {
+                    withAnimation { onRemove() }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundStyle(.red)
+                        .font(.title3)
+                }
+            }
+
             // Thumbnail
             if let path = item.sourceImagePath,
                let image = ImageStorageService.loadImage(relativePath: path) {

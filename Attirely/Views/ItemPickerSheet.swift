@@ -92,7 +92,7 @@ struct ItemPickerSheet: View {
 
 // MARK: - Picker Grid Cell
 
-private struct PickerGridCell: View {
+struct PickerGridCell: View {
     let item: ClothingItem
     let isSelected: Bool
 
