@@ -42,6 +42,22 @@ struct OutfitRowCard: View {
                     .foregroundStyle(Theme.secondaryText)
             }
 
+            // Tag chips
+            if !outfit.tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(Array(outfit.tags.sorted(by: { $0.name < $1.name }).prefix(3))) { tag in
+                            TagChipView(tag: tag)
+                        }
+                        if outfit.tags.count > 3 {
+                            Text("+\(outfit.tags.count - 3)")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    }
+                }
+            }
+
             // Thumbnail strip (up to 4 items in layer order)
             HStack(spacing: 6) {
                 ForEach(Array(OutfitLayerOrder.sorted(outfit.items).prefix(4))) { item in

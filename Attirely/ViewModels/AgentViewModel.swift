@@ -185,6 +185,10 @@ class AgentViewModel {
                 outfit.items.map { $0.id.uuidString }.sorted()
             }
 
+            // Fetch all tags for AI auto-tagging
+            let allTags = (try? modelContext?.fetch(FetchDescriptor<Tag>())) ?? []
+            let tagNames = allTags.map(\.name)
+
             let suggestions = try await AnthropicService.generateOutfits(
                 from: wardrobeItems,
                 occasion: input.occasion,
@@ -192,7 +196,8 @@ class AgentViewModel {
                 weatherContext: weatherViewModel?.weatherContextString,
                 comfortPreferences: comfortPreferencesString(),
                 styleSummary: styleSummaryText,
-                existingOutfitItemSets: existingItemSets
+                existingOutfitItemSets: existingItemSets,
+                availableTagNames: tagNames
             )
 
             var createdOutfits: [Outfit] = []
@@ -203,12 +208,14 @@ class AgentViewModel {
                 let minRequired = min(3, suggestion.itemIDs.count)
                 guard matchedItems.count >= minRequired else { continue }
 
+                let resolvedTags = resolveTags(from: suggestion.tags, allTags: allTags)
                 let outfit = Outfit(
                     name: suggestion.name,
                     occasion: suggestion.occasion,
                     reasoning: suggestion.reasoning,
                     isAIGenerated: true,
-                    items: matchedItems
+                    items: matchedItems,
+                    tags: resolvedTags
                 )
                 createdOutfits.append(outfit)
             }
@@ -230,6 +237,11 @@ class AgentViewModel {
         } catch {
             return ("Failed to generate outfit: \(error.localizedDescription)", [], [], nil)
         }
+    }
+
+    private func resolveTags(from names: [String], allTags: [Tag]) -> [Tag] {
+        let tagIndex = Dictionary(uniqueKeysWithValues: allTags.map { ($0.name, $0) })
+        return names.compactMap { tagIndex[Tag.normalized($0)] }
     }
 
     private func executeSearchWardrobe(_ input: SearchWardrobeInput) -> (String, [Outfit], [ClothingItem], String?) {

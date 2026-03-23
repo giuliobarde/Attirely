@@ -247,6 +247,7 @@ struct AnthropicService {
     - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal"
     - "item_ids": array of item id strings from the list below (use ONLY the provided IDs, do not invent new ones)
     - "reasoning": one sentence explaining why this combination works, including a styling tip
+    - "tags": array of 1-3 tag name strings chosen from the available tags list (empty array if no tags list provided)
 
     No markdown, no explanation, no code fences. Just the raw JSON array.
     """
@@ -258,7 +259,8 @@ struct AnthropicService {
         weatherContext: String? = nil,
         comfortPreferences: String? = nil,
         styleSummary: String? = nil,
-        existingOutfitItemSets: [[String]] = []
+        existingOutfitItemSets: [[String]] = [],
+        availableTagNames: [String] = []
     ) async throws -> [OutfitSuggestionDTO] {
         guard items.count >= 2 else {
             throw AnthropicError.insufficientWardrobe
@@ -301,7 +303,14 @@ struct AnthropicService {
             }
         }
 
-        let fullPrompt = outfitGenerationPrompt + "\n\n" + contextSection + "\nAvailable items:\n" + itemList + dedupSection
+        var tagSection = ""
+        if !availableTagNames.isEmpty {
+            tagSection = "\nAVAILABLE TAGS — assign 1-3 tags from this exact list that match the outfit:\n"
+            tagSection += availableTagNames.joined(separator: ", ")
+            tagSection += "\n"
+        }
+
+        let fullPrompt = outfitGenerationPrompt + "\n\n" + contextSection + tagSection + "\nAvailable items:\n" + itemList + dedupSection
 
         let requestBody: [String: Any] = [
             "model": model,

@@ -5,6 +5,11 @@ import SwiftData
 class OutfitViewModel {
     // List filtering
     var showFavoritesOnly = false
+    var selectedTagIDs: Set<PersistentIdentifier> = []
+
+    // Bulk-tag selection mode
+    var isSelecting = false
+    var selectedOutfitIDs: Set<PersistentIdentifier> = []
 
     // AI generation context
     var selectedOccasion: String?
@@ -23,6 +28,8 @@ class OutfitViewModel {
     // Sheet presentation
     var isShowingGenerateSheet = false
     var isShowingItemPicker = false
+    var isShowingBulkTagEdit = false
+    var isShowingDeleteConfirmation = false
 
     var modelContext: ModelContext?
     var weatherViewModel: WeatherViewModel?
@@ -33,10 +40,18 @@ class OutfitViewModel {
     // MARK: - List
 
     func filteredOutfits(from outfits: [Outfit]) -> [Outfit] {
+        var result = outfits
         if showFavoritesOnly {
-            return outfits.filter { $0.isFavorite }
+            result = result.filter { $0.isFavorite }
         }
-        return outfits
+        if !selectedTagIDs.isEmpty {
+            result = result.filter { outfit in
+                selectedTagIDs.allSatisfy { tagID in
+                    outfit.tags.contains { $0.persistentModelID == tagID }
+                }
+            }
+        }
+        return result
     }
 
     // MARK: - Favorites
@@ -116,6 +131,10 @@ class OutfitViewModel {
             outfit.items.map { $0.id.uuidString }.sorted()
         }
 
+        // Fetch all tags for AI auto-tagging
+        let allTags = (try? modelContext.fetch(FetchDescriptor<Tag>())) ?? []
+        let tagNames = allTags.map(\.name)
+
         Task {
             do {
                 let suggestions = try await AnthropicService.generateOutfits(
@@ -125,7 +144,8 @@ class OutfitViewModel {
                     weatherContext: weatherViewModel?.weatherContextString,
                     comfortPreferences: comfortPreferencesString(from: userProfile),
                     styleSummary: styleSummaryText,
-                    existingOutfitItemSets: existingItemSets
+                    existingOutfitItemSets: existingItemSets,
+                    availableTagNames: tagNames
                 )
 
                 var created: [Outfit] = []
@@ -137,12 +157,14 @@ class OutfitViewModel {
                     let minRequired = min(3, suggestion.itemIDs.count)
                     guard matchedItems.count >= minRequired else { continue }
 
+                    let resolvedTags = resolveTags(from: suggestion.tags, allTags: allTags)
                     let outfit = Outfit(
                         name: suggestion.name,
                         occasion: suggestion.occasion,
                         reasoning: suggestion.reasoning,
                         isAIGenerated: true,
-                        items: matchedItems
+                        items: matchedItems,
+                        tags: resolvedTags
                     )
                     captureWeatherSnapshot(on: outfit)
                     modelContext.insert(outfit)
@@ -176,6 +198,113 @@ class OutfitViewModel {
     func autoPopulateSeason() {
         guard selectedSeason == nil else { return }
         selectedSeason = weatherViewModel?.suggestedSeason
+    }
+
+    // MARK: - Tag Resolution
+
+    private func resolveTags(from names: [String], allTags: [Tag]) -> [Tag] {
+        let tagIndex = Dictionary(uniqueKeysWithValues: allTags.map { ($0.name, $0) })
+        return names.compactMap { tagIndex[Tag.normalized($0)] }
+    }
+
+    // MARK: - Bulk Selection
+
+    func enterSelectionMode(with outfit: Outfit) {
+        isSelecting = true
+        selectedOutfitIDs = [outfit.persistentModelID]
+    }
+
+    func toggleOutfitSelection(_ outfit: Outfit) {
+        if selectedOutfitIDs.contains(outfit.persistentModelID) {
+            selectedOutfitIDs.remove(outfit.persistentModelID)
+        } else {
+            selectedOutfitIDs.insert(outfit.persistentModelID)
+        }
+    }
+
+    func applyTagToSelected(tag: Tag, outfits: [Outfit]) {
+        let targets = outfits.filter { selectedOutfitIDs.contains($0.persistentModelID) }
+        for outfit in targets {
+            if !outfit.tags.contains(where: { $0.persistentModelID == tag.persistentModelID }) {
+                outfit.tags.append(tag)
+            }
+        }
+        try? modelContext?.save()
+    }
+
+    func removeTagFromSelected(tag: Tag, outfits: [Outfit]) {
+        let targets = outfits.filter { selectedOutfitIDs.contains($0.persistentModelID) }
+        for outfit in targets {
+            outfit.tags.removeAll { $0.persistentModelID == tag.persistentModelID }
+        }
+        try? modelContext?.save()
+    }
+
+    func deleteSelectedOutfits(outfits: [Outfit]) {
+        guard let modelContext else { return }
+        let targets = outfits.filter { selectedOutfitIDs.contains($0.persistentModelID) }
+        for outfit in targets {
+            modelContext.delete(outfit)
+        }
+        try? modelContext.save()
+        exitSelectionMode()
+    }
+
+    func applyBulkTagEdits(edits: [PersistentIdentifier: Bool], outfits: [Outfit], allTags: [Tag]) {
+        let targets = outfits.filter { selectedOutfitIDs.contains($0.persistentModelID) }
+        for (tagID, shouldHave) in edits {
+            guard let tag = allTags.first(where: { $0.persistentModelID == tagID }) else { continue }
+            for outfit in targets {
+                let has = outfit.tags.contains { $0.persistentModelID == tagID }
+                if shouldHave && !has {
+                    outfit.tags.append(tag)
+                } else if !shouldHave && has {
+                    outfit.tags.removeAll { $0.persistentModelID == tagID }
+                }
+            }
+        }
+        try? modelContext?.save()
+        exitSelectionMode()
+    }
+
+    func exitSelectionMode() {
+        isSelecting = false
+        selectedOutfitIDs = []
+    }
+
+    // MARK: - Tag CRUD
+
+    func createTag(name: String, context: ModelContext) {
+        let normalized = Tag.normalized(name)
+        guard !normalized.isEmpty else { return }
+        let predicate = #Predicate<Tag> { $0.name == normalized }
+        let existing = (try? context.fetchCount(FetchDescriptor(predicate: predicate))) ?? 0
+        guard existing == 0 else { return }
+        let tag = Tag(name: normalized, isPredefined: false)
+        context.insert(tag)
+        try? context.save()
+    }
+
+    func renameTag(_ tag: Tag, to newName: String, context: ModelContext) {
+        guard !tag.isPredefined else { return }
+        let normalized = Tag.normalized(newName)
+        guard !normalized.isEmpty else { return }
+        let predicate = #Predicate<Tag> { $0.name == normalized }
+        let existing = (try? context.fetchCount(FetchDescriptor(predicate: predicate))) ?? 0
+        guard existing == 0 else { return }
+        tag.name = normalized
+        try? context.save()
+    }
+
+    func deleteTag(_ tag: Tag, context: ModelContext) {
+        guard !tag.isPredefined else { return }
+        context.delete(tag)
+        try? context.save()
+    }
+
+    func updateTagColor(_ tag: Tag, hex: String?, context: ModelContext) {
+        tag.colorHex = hex
+        try? context.save()
     }
 
     // MARK: - Weather Snapshot

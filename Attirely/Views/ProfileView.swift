@@ -220,6 +220,22 @@ struct ProfileView: View {
                     }
                 }
             }
+
+            Divider()
+
+            NavigationLink {
+                TagManagementView()
+            } label: {
+                HStack {
+                    Text("Manage Tags")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.primaryText)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
         }
         .themeCard()
     }

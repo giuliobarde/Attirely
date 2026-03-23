@@ -21,6 +21,9 @@ final class Outfit {
     @Relationship(deleteRule: .nullify, inverse: \ClothingItem.outfits)
     var items: [ClothingItem]
 
+    @Relationship
+    var tags: [Tag] = []
+
     var displayName: String {
         if let name, !name.isEmpty { return name }
         if let occasion, !occasion.isEmpty { return occasion }
@@ -32,7 +35,8 @@ final class Outfit {
         occasion: String? = nil,
         reasoning: String? = nil,
         isAIGenerated: Bool = false,
-        items: [ClothingItem] = []
+        items: [ClothingItem] = [],
+        tags: [Tag] = []
     ) {
         self.id = UUID()
         self.name = name
@@ -42,5 +46,6 @@ final class Outfit {
         self.isFavorite = false
         self.createdAt = Date()
         self.items = items
+        self.tags = tags
     }
 }

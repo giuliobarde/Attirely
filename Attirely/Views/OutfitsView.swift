@@ -6,6 +6,7 @@ struct OutfitsView: View {
     @Query private var wardrobeItems: [ClothingItem]
     @Query private var profiles: [UserProfile]
     @Query private var styleSummaries: [StyleSummary]
+    @Query(sort: \Tag.name) private var allTags: [Tag]
     @State private var viewModel = OutfitViewModel()
     @Environment(\.modelContext) private var modelContext
     @Bindable var weatherViewModel: WeatherViewModel
@@ -13,24 +14,50 @@ struct OutfitsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                let filtered = viewModel.filteredOutfits(from: allOutfits)
+            VStack(spacing: 0) {
+                TagFilterBar(
+                    selectedTagIDs: $viewModel.selectedTagIDs,
+                    outfits: allOutfits
+                )
 
-                if filtered.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(filtered) { outfit in
-                                NavigationLink(value: outfit.persistentModelID) {
-                                    OutfitRowCard(outfit: outfit) {
-                                        viewModel.toggleFavorite(outfit)
+                Group {
+                    let filtered = viewModel.filteredOutfits(from: allOutfits)
+
+                    if filtered.isEmpty {
+                        emptyState
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                ForEach(filtered) { outfit in
+                                    if viewModel.isSelecting {
+                                        Button {
+                                            viewModel.toggleOutfitSelection(outfit)
+                                        } label: {
+                                            OutfitRowCard(outfit: outfit) {
+                                                viewModel.toggleFavorite(outfit)
+                                            }
+                                            .overlay(alignment: .bottomTrailing) {
+                                                selectionIndicator(for: outfit)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                    } else {
+                                        NavigationLink(value: outfit.persistentModelID) {
+                                            OutfitRowCard(outfit: outfit) {
+                                                viewModel.toggleFavorite(outfit)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .onLongPressGesture {
+                                            withAnimation {
+                                                viewModel.enterSelectionMode(with: outfit)
+                                            }
+                                        }
                                     }
                                 }
-                                .buttonStyle(.plain)
                             }
+                            .padding(.horizontal)
                         }
-                        .padding(.horizontal)
                     }
                 }
             }
@@ -38,13 +65,29 @@ struct OutfitsView: View {
             .navigationTitle("Outfits")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        withAnimation {
-                            viewModel.showFavoritesOnly.toggle()
+                    HStack(spacing: 12) {
+                        Button {
+                            withAnimation {
+                                viewModel.showFavoritesOnly.toggle()
+                            }
+                        } label: {
+                            Image(systemName: viewModel.showFavoritesOnly ? "star.fill" : "star")
+                                .foregroundStyle(viewModel.showFavoritesOnly ? Theme.champagne : Theme.secondaryText)
                         }
-                    } label: {
-                        Image(systemName: viewModel.showFavoritesOnly ? "star.fill" : "star")
-                            .foregroundStyle(viewModel.showFavoritesOnly ? Theme.champagne : Theme.secondaryText)
+
+                        Button {
+                            withAnimation {
+                                if viewModel.isSelecting {
+                                    viewModel.exitSelectionMode()
+                                } else {
+                                    viewModel.isSelecting = true
+                                }
+                            }
+                        } label: {
+                            Text(viewModel.isSelecting ? "Done" : "Select")
+                                .font(.subheadline)
+                                .foregroundStyle(viewModel.isSelecting ? Theme.champagne : Theme.secondaryText)
+                        }
                     }
                 }
 
@@ -72,6 +115,11 @@ struct OutfitsView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if viewModel.isSelecting && !viewModel.selectedOutfitIDs.isEmpty {
+                    bulkTagBar
+                }
+            }
             .navigationDestination(for: PersistentIdentifier.self) { id in
                 if let outfit = allOutfits.first(where: { $0.persistentModelID == id }) {
                     OutfitDetailView(outfit: outfit)
@@ -92,6 +140,22 @@ struct OutfitsView: View {
                 wardrobeItems: wardrobeItems
             )
         }
+        .sheet(isPresented: $viewModel.isShowingBulkTagEdit) {
+            BulkTagEditSheet(
+                selectedOutfitIDs: viewModel.selectedOutfitIDs,
+                allOutfits: allOutfits
+            ) { edits in
+                viewModel.applyBulkTagEdits(edits: edits, outfits: allOutfits, allTags: allTags)
+            }
+        }
+        .alert("Delete Outfits?", isPresented: $viewModel.isShowingDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                viewModel.deleteSelectedOutfits(outfits: allOutfits)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Delete \(viewModel.selectedOutfitIDs.count) outfit\(viewModel.selectedOutfitIDs.count == 1 ? "" : "s")? This cannot be undone.")
+        }
         .onAppear {
             viewModel.modelContext = modelContext
             viewModel.weatherViewModel = weatherViewModel
@@ -102,6 +166,8 @@ struct OutfitsView: View {
             viewModel.updateStyleContext(from: styleSummaries.first)
         }
     }
+
+    // MARK: - Empty State
 
     @ViewBuilder
     private var emptyState: some View {
@@ -117,6 +183,12 @@ struct OutfitsView: View {
                 systemImage: "star",
                 description: Text("Star an outfit to add it to your favorites.")
             )
+        } else if !viewModel.selectedTagIDs.isEmpty {
+            ContentUnavailableView(
+                "No Matching Outfits",
+                systemImage: "tag",
+                description: Text("No outfits have all the selected tags.")
+            )
         } else {
             ContentUnavailableView(
                 "No Outfits Yet",
@@ -125,4 +197,45 @@ struct OutfitsView: View {
             )
         }
     }
+
+    // MARK: - Selection Mode
+
+    private func selectionIndicator(for outfit: Outfit) -> some View {
+        let isSelected = viewModel.selectedOutfitIDs.contains(outfit.persistentModelID)
+        return Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isSelected ? Theme.champagne : Theme.secondaryText)
+            .padding(6)
+            .background(.ultraThinMaterial)
+            .clipShape(Circle())
+            .padding(8)
+    }
+
+    // MARK: - Bulk Tag Bar
+
+    private var bulkTagBar: some View {
+        HStack(spacing: 12) {
+            Text("\(viewModel.selectedOutfitIDs.count) selected")
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+
+            Spacer()
+
+            Button("Edit Tags") { viewModel.isShowingBulkTagEdit = true }
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(Theme.champagne)
+
+            Button {
+                viewModel.isShowingDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+    }
+
 }

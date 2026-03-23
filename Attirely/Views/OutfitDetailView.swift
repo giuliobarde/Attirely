@@ -6,6 +6,7 @@ struct OutfitDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirmation = false
+    @State private var isShowingTagPicker = false
 
     var body: some View {
         ScrollView {
@@ -38,6 +39,29 @@ struct OutfitDetailView: View {
 
                         Text(outfit.createdAt.formatted(.dateTime.month().day().year()))
                             .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
+                .padding(.horizontal)
+
+                // Tags
+                HStack {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(outfit.tags.sorted(by: { $0.name < $1.name })) { tag in
+                                TagChipView(tag: tag) {
+                                    outfit.tags.removeAll { $0.persistentModelID == tag.persistentModelID }
+                                    try? modelContext.save()
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        isShowingTagPicker = true
+                    } label: {
+                        Image(systemName: "tag")
+                            .font(.subheadline)
                             .foregroundStyle(Theme.secondaryText)
                     }
                 }
@@ -103,6 +127,9 @@ struct OutfitDetailView: View {
                 try? modelContext.save()
                 dismiss()
             }
+        }
+        .sheet(isPresented: $isShowingTagPicker) {
+            TagPickerSheet(outfit: outfit)
         }
     }
 }

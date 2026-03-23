@@ -32,7 +32,8 @@ Attirely/
 │   ├── AgentToolDTO.swift          # Tool call/result types for agent tool_use
 │   ├── WeatherData.swift           # Ephemeral structs (current + hourly weather)
 │   ├── UserProfile.swift           # SwiftData @Model (user prefs, profile, style questionnaire)
-│   └── StyleSummary.swift          # SwiftData @Model (template/AI style summary)
+│   ├── StyleSummary.swift          # SwiftData @Model (template/AI style summary)
+│   └── Tag.swift                   # SwiftData @Model (shared tagging: outfits now, items later)
 ├── Services/
 │   ├── AnthropicService.swift      # Claude API calls (scan, duplicates, outfits, style analysis, agent)
 │   ├── AgentService.swift          # Stateless agent conversation service (tool_use, multi-turn)
@@ -68,7 +69,11 @@ Attirely/
 │   ├── AgentView.swift             # Chat agent tab (messages, input, starters, weather chip)
 │   ├── AgentMessageBubble.swift    # Agent message rendering (text, outfit cards, item refs, insights)
 │   ├── ProfileView.swift           # Profile tab (details, prefs, analytics)
-│   └── WardrobeAnalyticsView.swift # Swift Charts wardrobe analytics
+│   ├── WardrobeAnalyticsView.swift # Swift Charts wardrobe analytics
+│   ├── TagChipView.swift           # Reusable tag chip component (selected/default states, custom colors)
+│   ├── TagFilterBar.swift          # Horizontal scrolling tag filter in Outfits tab
+│   ├── TagPickerSheet.swift        # Toggle/create tags on a single outfit
+│   └── TagManagementView.swift     # Full tag CRUD screen (Profile → Manage Tags)
 ├── Helpers/
 │   ├── Theme.swift                 # Brand design system: color tokens, ViewModifiers, ButtonStyles
 │   ├── ColorMapping.swift          # Color name → SwiftUI Color
@@ -76,7 +81,8 @@ Attirely/
 │   ├── OutfitLayerOrder.swift      # Category → layer sort order
 │   ├── SeasonHelper.swift          # Season detection from date/weather
 │   ├── TemperatureFormatter.swift  # °C/°F formatting helper
-│   └── StyleSummaryTemplate.swift  # Deterministic style summary from questionnaire
+│   ├── StyleSummaryTemplate.swift  # Deterministic style summary from questionnaire
+│   └── TagSeeder.swift             # Idempotent predefined tag seeding on launch
 └── Resources/
     ├── Config.plist.example
     └── Assets.xcassets
@@ -90,7 +96,7 @@ Attirely/
 ## Architecture Rules (MVVM)
 
 ### Models (`Models/`)
-- `ClothingItem` is a SwiftData `@Model` class for persistence. `ClothingItemDTO` is a `Codable` struct for API parsing. `ScanSession`, `Outfit`, `UserProfile`, and `StyleSummary` are SwiftData `@Model`s. `OutfitSuggestionDTO` and `StyleAnalysisDTO` are `Codable` structs for AI response parsing.
+- `ClothingItem` is a SwiftData `@Model` class for persistence. `ClothingItemDTO` is a `Codable` struct for API parsing. `ScanSession`, `Outfit`, `UserProfile`, `StyleSummary`, and `Tag` are SwiftData `@Model`s. `OutfitSuggestionDTO` (includes `tags: [String]` with resilient decoder) and `StyleAnalysisDTO` are `Codable` structs for AI response parsing.
 - `ChatMessage` is an ephemeral in-memory struct (no SwiftData) for agent conversation messages. `AgentToolDTO.swift` contains `ToolUseBlock`, `AgentTurn`, and typed tool input structs for Claude tool_use parsing.
 - No business logic, no API calls, no UI code.
 - DTOs own their `CodingKeys` for JSON mapping (snake_case API ↔ camelCase Swift).
@@ -148,7 +154,8 @@ Attirely/
 
 ### Outfit Generation
 - Text-only request — sends wardrobe item attributes with UUIDs
-- Generates exactly 1 outfit per request; returns `OutfitSuggestionDTO` with `name`, `occasion`, `item_ids`, `reasoning`
+- Generates exactly 1 outfit per request; returns `OutfitSuggestionDTO` with `name`, `occasion`, `item_ids`, `reasoning`, `tags`
+- **AI auto-tagging**: available tag names injected into prompt; Claude returns 1-3 tag names per outfit; client-side resolution via normalized name lookup, unrecognized names silently dropped
 - Deduplication via `existingOutfitItemSets` (sorted item-ID arrays for up to 20 existing outfits)
 - Client-side validation: minimum 3 matched items before saving; degraded outfits with hallucinated IDs are skipped
 - Weather-adaptive: temperature-based layering/fabric rules, precipitation awareness
@@ -170,8 +177,9 @@ Attirely/
 - Full wardrobe items loaded on-demand via tool execution, not in system prompt (token budget)
 - `AnthropicService.sendAgentRequest` returns full JSON dict (handles tool_use + text content blocks)
 - Outfits generated in chat are ephemeral until user taps "Save Outfit" → SwiftData insert + weather snapshot
+- **Agent auto-tagging**: `executeGenerateOutfit` fetches all tags, passes `availableTagNames` to `AnthropicService`, resolves returned tag names to `Tag` objects on created outfits
 - Style insights appended to `StyleSummary.gapObservations` via `StyleViewModel.appendAgentInsight`
-- `OutfitSuggestionDTO.spokenSummary: String?` prepares for Siri voice output (v0.7)
+- `OutfitSuggestionDTO.spokenSummary: String?` prepares for Siri voice output (v0.9)
 - Uses 2048 max tokens
 
 ### Weather API
@@ -202,9 +210,9 @@ Attirely/
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.6)
+## Current State (v0.7)
 - Camera and photo library scanning with Claude vision API for clothing detection
-- SwiftData persistence for clothing items, scan sessions, outfits, user profile, and style summary
+- SwiftData persistence for clothing items, scan sessions, outfits, user profile, style summary, and tags
 - Images stored on disk (Documents/clothing-images/, Documents/scan-images/, Documents/profile-images/)
 - Wardrobe view with grid/list toggle, category filtering, and item detail/edit with AI originals as reference
 - Duplicate detection: pre-filter by category+color, Claude-based comparison, user confirmation
@@ -212,10 +220,11 @@ Attirely/
 - **Style Agent chat tab**: multi-turn conversation with Claude using tool_use for outfit generation, wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Conversation starters. Designed for future Siri reuse via stateless `AgentService`
 - Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, deduplication, item match validation
 - Outfit display: layer-ordered cards (Outerwear → Full Body → Top → Bottom → Footwear → Accessory), favorites, AI reasoning
+- **Outfit tagging system**: shared `Tag` SwiftData model (many-to-many with `Outfit`). 12 predefined tags (seasonal, occasion, `siri`), custom user tags. AI auto-tagging on outfit generation (both direct and agent). Tag chips on outfit cards and detail view. Tag filter bar in Outfits tab (AND multi-select). Tag picker sheet for editing. Bulk-tag selection mode. Tag management in Profile settings (create/rename/delete custom tags, color picker). `Color(hex:)` and `Color.toHex()` extensions for tag chip colors
 - Manual item entry form with all attributes and optional photo
 - Weather integration: WeatherKit + Open-Meteo fallback, toolbar indicator, detail sheet with hourly forecast, weather context in AI prompts, weather override toggle
 - Location: CoreLocation for weather, reverse geocoding for display, custom location override with geocoding
-- Profile: name, photo, temperature unit (°C/°F), theme (System/Light/Dark) with full dark mode, location override
+- Profile: name, photo, temperature unit (°C/°F), theme (System/Light/Dark) with full dark mode, location override, tag management
 - Style & Comfort questionnaire: cold/heat sensitivity, layering preference, style identity, comfort vs appearance, weather dressing approach — stored on `UserProfile` with enum bridges
 - Template-based style summary via `StyleSummaryTemplate` (deterministic, no LLM), with manual edit support
 - AI style analysis: sends wardrobe + outfits to Claude, returns style modes/identity/gaps/weather behavior. Auto-triggers on data changes, merges incrementally into `StyleSummary`. Agent insights appended via `appendAgentInsight`
@@ -249,6 +258,7 @@ Outfit (SwiftData @Model)
 ├── name: String?, occasion: String?, reasoning: String?
 ├── isAIGenerated: Bool, isFavorite: Bool, createdAt: Date
 ├── items: [ClothingItem]         # @Relationship(deleteRule: .nullify)
+├── tags: [Tag]                   # @Relationship — many-to-many via Tag model
 ├── displayName: String           # computed: name → occasion → formatted date
 ├── weatherTempAtCreation: Double?, weatherFeelsLikeAtCreation: Double?
 ├── seasonAtCreation: String?, monthAtCreation: Int?
@@ -274,11 +284,51 @@ StyleSummary (SwiftData @Model)
 ├── itemCountAtLastAnalysis, outfitCountAtLastAnalysis, favoritedOutfitCountAtLastAnalysis: Int
 ├── isUserEdited: Bool, isAIEnriched: Bool
 └── createdAt: Date
+
+Tag (SwiftData @Model)
+├── id: UUID
+├── name: String                  # normalized: lowercased, trimmed, unique
+├── isPredefined: Bool            # true for system tags (cannot be deleted)
+├── colorHex: String?             # optional hex color for UI chip display
+├── createdAt: Date
+├── outfits: [Outfit]             # @Relationship — inverse of Outfit.tags
+└── (v0.8: items: [ClothingItem]) # future relationship for item tagging
 ```
 
 ## Roadmap
 
-### v0.7 — Siri & HomePod Integration
+### v0.7 — Outfit Tagging System
+- **Tag model**: shared `Tag` SwiftData model with `name` (normalized: lowercased, trimmed, unique), `isPredefined`, `colorHex`, many-to-many relationship with `Outfit`
+- **Predefined tags** (ship with app, cannot be deleted):
+  - *Seasonal*: `spring`, `summer`, `fall`, `winter`
+  - *Occasion*: `work`, `casual`, `date-night`, `formal`, `gym`, `travel`, `outdoor`
+  - *Special*: `siri` (marks outfits for Siri quick-pick in v0.9)
+- **Custom tags**: users can create, rename, and delete their own tags
+- **AI auto-tagging**: outfit generation prompt includes the full list of available tag names; Claude returns a `tags: [String]` field in `OutfitSuggestionDTO`; matched against existing tags by normalized name, unrecognized names silently dropped
+- **Agent auto-tagging**: outfits generated via the style agent also receive AI-assigned tags using the same mechanism
+- Tags are additive — an outfit can have multiple tags (e.g. `["work", "winter", "siri"]`)
+
+#### Tagging UI
+- Tag chips on outfit cards (compact) and outfit detail view (full, editable)
+- Tag filter bar in Outfits tab — replaces or augments the existing favorites filter; multi-select filtering
+- Tag picker sheet on outfit detail (toggle existing tags, create new inline)
+- Tag management screen in Settings: view predefined tags, create/rename/delete custom tags, set chip colors
+- Bulk-tag action: select multiple outfits → apply/remove tags
+
+### v0.8 — Item Tagging & Agent Intent Detection
+- Extend `Tag` model with `items: [ClothingItem]` relationship (many-to-many)
+- Tag chips and filter bar in Wardrobe tab, tag picker on item detail
+- Predefined item tags: `everyday`, `statement`, `layering`, `seasonal-rotate`, or reuse outfit tags where applicable
+- AI auto-tagging on clothing scan: Claude returns suggested tags for scanned items
+
+#### Agent Behavior (Intent Detection)
+- When the user asks for something **new** ("give me a new outfit", "surprise me", "something different"), the agent defaults to **AI generation** via `generateOutfit` tool
+- When the user asks for something **familiar** ("what do I usually wear", "something I've worn before", "my go-to work outfit", "a classic"), the agent defaults to **searching existing outfits** — prioritizes favorites, then tag-matched outfits, then all outfits
+- Intent detection is handled in the agent system prompt; Claude interprets phrasing and picks the appropriate tool (`generateOutfit` vs `searchWardrobe`/outfit lookup)
+- Tag-aware search: agent can filter by tags when searching ("find me a formal outfit" → search outfits tagged `formal`)
+- If generation produces no viable result (all combinations exhausted or insufficient wardrobe), falls back to existing outfits with explanation
+
+### v0.9 — Siri & HomePod Integration
 - **App Intents** framework (iOS 16+) wrapping the same `AgentService` generation core
 - Two intents:
   - **"What should I wear today?"** — weather + preferences + wardrobe → outfit → spoken response
@@ -289,12 +339,17 @@ StyleSummary (SwiftData @Model)
 - Accesses SwiftData store from App Intent extension process
 - HomePod triggers via Siri intent forwarding to iPhone
 
-#### Siri-Specific Considerations
-- **Latency** — consider pre-generating a "daily suggestion" on app open that Siri can read back instantly, with on-demand generation as fallback
-- **Lean context** — single-turn loads everything at once (no progressive loading like chat), so compact wardrobe format is critical
-- **Graceful degradation** — if weather unavailable, fall back to seasonal defaults based on date rather than failing
+#### Siri Outfit Selection
+- Siri queries outfits tagged `"siri"`, filtered by current weather/season/occasion, preferring non-recently-worn
+- **On-demand AI generation**: toggled off by default in Settings. When enabled, a warning explains potential 5–15s Siri response delay. If toggled on and no `siri`-tagged match found, falls back to live `AgentService` generation
+- **Exhaustion fallback**: if all viable `siri`-tagged outfits have been recently worn or none match the context, re-suggests least-recently-worn from pool. If AI generation is enabled, tries generation first before falling back
 
-### v0.8 — Image Extraction & Confidence
+#### Siri-Specific Considerations
+- **Latency** — tagged-pool-first approach ensures near-instant Siri responses; AI generation is opt-in with explicit delay warning
+- **Lean context** — single-turn loads everything at once (no progressive loading like chat), so compact wardrobe format is critical
+- **Graceful degradation** — if weather unavailable, fall back to seasonal defaults based on date rather than failing. If no `siri`-tagged outfits exist and AI generation is off, prompt user to tag some outfits for Siri
+
+### v0.10 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images
 - Background removal via Apple Vision framework (`VNGenerateForegroundInstanceMaskRequest`)
 - Attribute confidence system: Claude returns per-attribute confidence (`observed`/`inferred`/`assumed`), stored in `attributeConfidence: String?` on `ClothingItem`
@@ -302,7 +357,7 @@ StyleSummary (SwiftData @Model)
 - Re-scan merge workflow: user adds better photo, system re-runs and merges (user edits preserved, AI fields updated)
 - New field: `cutoutImagePath: String?` on `ClothingItem`
 
-### v0.9 — Visual Outfit Compositor
+### v0.11 — Visual Outfit Compositor
 - Replace card-based outfit layout with layered visual composition (items stacked as worn on a body)
 - Two sub-problems: isolation (clean cutouts) and normalization (consistent perspective/scale/lighting across different source photos)
 - Planned approach: generative AI to transform source photos into standardized flat-lay product images, then composite via category-based anchor points and z-ordering
