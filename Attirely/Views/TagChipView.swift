@@ -37,14 +37,14 @@ struct TagChipView: View {
     }
 
     private var chipBackground: Color {
-        if tag.colorHex != nil {
-            return tag.tagColor.opacity(0.25)
+        if let accent = tag.resolvedAccentColor {
+            return accent.opacity(0.28)
         }
         return isSelected ? Theme.pillActiveBg : Theme.tagBackground
     }
 
     private var chipForeground: Color {
-        if tag.colorHex != nil {
+        if tag.resolvedAccentColor != nil {
             return Theme.primaryText
         }
         return isSelected ? Theme.champagne : Theme.tagText

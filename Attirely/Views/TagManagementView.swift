@@ -56,7 +56,10 @@ struct TagManagementView: View {
                                 .foregroundStyle(Theme.secondaryText)
 
                             ColorPicker("", selection: Binding(
-                                get: { Color(hex: tag.colorHex ?? "") ?? Theme.champagne },
+                                get: {
+                                    if let h = tag.colorHex, let c = Color(hex: h) { return c }
+                                    return Color(hex: Tag.derivedAccentHex(from: tag.name)) ?? Theme.champagne
+                                },
                                 set: { color in
                                     viewModel.updateTagColor(tag, hex: color.toHex(), context: modelContext)
                                 }
