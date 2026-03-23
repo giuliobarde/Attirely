@@ -32,14 +32,11 @@ struct MainTabView: View {
             Tab("Agent", systemImage: "bubble.left.and.text.bubble.right") {
                 AgentView(weatherViewModel: weatherViewModel, styleViewModel: styleViewModel)
             }
-            Tab("Scan", systemImage: "camera") {
-                HomeView(styleViewModel: styleViewModel)
+            Tab("Wardrobe", systemImage: "tshirt") {
+                WardrobeView(weatherViewModel: weatherViewModel, styleViewModel: styleViewModel)
             }
             Tab("Outfits", systemImage: "sparkles") {
                 OutfitsView(weatherViewModel: weatherViewModel, styleViewModel: styleViewModel)
-            }
-            Tab("Wardrobe", systemImage: "tshirt") {
-                WardrobeView(weatherViewModel: weatherViewModel)
             }
             Tab("Profile", systemImage: "person") {
                 ProfileView(styleViewModel: styleViewModel)

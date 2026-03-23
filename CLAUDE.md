@@ -49,12 +49,11 @@ Attirely/
 │   ├── ProfileViewModel.swift      # Profile state, analytics, geocoding
 │   └── StyleViewModel.swift        # AI style analysis state, debounce, merge, agent insights
 ├── Views/
-│   ├── MainTabView.swift           # TabView (Agent + Scan + Outfits + Wardrobe + Profile)
-│   ├── HomeView.swift
+│   ├── MainTabView.swift           # TabView (Agent + Wardrobe + Outfits + Profile)
 │   ├── ResultsView.swift
 │   ├── ClothingItemCard.swift
 │   ├── ImagePicker.swift           # UIImagePickerController wrapper
-│   ├── WardrobeView.swift          # Browsable wardrobe (grid/list)
+│   ├── WardrobeView.swift          # Browsable wardrobe (grid/list) + scan integration (camera/photo/manual)
 │   ├── ItemDetailView.swift        # View/edit item details
 │   ├── DuplicateWarningBanner.swift
 │   ├── DuplicateReviewSheet.swift
@@ -209,7 +208,7 @@ Attirely/
 - Images stored on disk (Documents/clothing-images/, Documents/scan-images/, Documents/profile-images/)
 - Wardrobe view with grid/list toggle, category filtering, and item detail/edit with AI originals as reference
 - Duplicate detection: pre-filter by category+color, Claude-based comparison, user confirmation
-- Tab-based navigation: Agent, Scan, Outfits, Wardrobe, Profile
+- Tab-based navigation: Agent, Wardrobe, Outfits, Profile (Scan merged into Wardrobe — toolbar menu + empty state onboarding)
 - **Style Agent chat tab**: multi-turn conversation with Claude using tool_use for outfit generation, wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Conversation starters. Designed for future Siri reuse via stateless `AgentService`
 - Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, deduplication, item match validation
 - Outfit display: layer-ordered cards (Outerwear → Full Body → Top → Bottom → Footwear → Accessory), favorites, AI reasoning

@@ -1,12 +1,17 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct WardrobeView: View {
     @Query(sort: \ClothingItem.createdAt, order: .reverse) private var allItems: [ClothingItem]
     @State private var viewModel = WardrobeViewModel()
-    @State private var isShowingAddItem = false
+    @State private var scanViewModel = ScanViewModel()
+    @State private var isShowingManualAdd = false
+    @State private var isShowingPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @Environment(\.modelContext) private var modelContext
     @Bindable var weatherViewModel: WeatherViewModel
+    var styleViewModel: StyleViewModel
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 12),
@@ -16,57 +21,108 @@ struct WardrobeView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Category filter
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(WardrobeCategory.allCases, id: \.self) { category in
-                            Button {
-                                viewModel.selectedCategory = category
-                            } label: {
-                                Text(category.rawValue)
-                                    .themePill(isActive: viewModel.selectedCategory == category)
+                if !allItems.isEmpty {
+                    // Category filter — only when wardrobe has items
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(WardrobeCategory.allCases, id: \.self) { category in
+                                Button {
+                                    viewModel.selectedCategory = category
+                                } label: {
+                                    Text(category.rawValue)
+                                        .themePill(isActive: viewModel.selectedCategory == category)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
-                .padding(.vertical, 8)
 
-                let filtered = viewModel.filteredItems(from: allItems)
+                if allItems.isEmpty {
+                    // Empty state onboarding
+                    VStack(spacing: 24) {
+                        Spacer()
 
-                if filtered.isEmpty {
-                    ContentUnavailableView(
-                        "No Items",
-                        systemImage: "tshirt",
-                        description: Text(allItems.isEmpty
-                            ? "Scan or add clothes to build your wardrobe."
-                            : "No items match the current filter.")
-                    )
+                        VStack(spacing: 8) {
+                            Image(systemName: "tshirt")
+                                .font(.system(size: 56))
+                                .foregroundStyle(Theme.champagne)
+                            Text("Build Your Wardrobe")
+                                .font(.title2.weight(.medium))
+                                .foregroundStyle(Theme.primaryText)
+                            Text("Scan clothes with your camera or add them manually")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondaryText)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        VStack(spacing: 12) {
+                            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                                Button {
+                                    scanViewModel.showingCamera = true
+                                } label: {
+                                    Label("Scan Clothes", systemImage: "camera")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.themePrimary)
+                            }
+
+                            Button {
+                                isShowingPhotoPicker = true
+                            } label: {
+                                Label("Choose from Library", systemImage: "photo.on.rectangle")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.themeSecondary)
+
+                            Button {
+                                isShowingManualAdd = true
+                            } label: {
+                                Label("Add Manually", systemImage: "square.and.pencil")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.themeSecondary)
+                        }
+                        .padding(.horizontal, 32)
+
+                        Spacer()
+                    }
                 } else {
-                    ScrollView {
-                        switch viewModel.displayMode {
-                        case .grid:
-                            LazyVGrid(columns: gridColumns, spacing: 12) {
-                                ForEach(filtered) { item in
-                                    NavigationLink(value: item.persistentModelID) {
-                                        WardrobeGridCell(item: item)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal)
+                    let filtered = viewModel.filteredItems(from: allItems)
 
-                        case .list:
-                            LazyVStack(spacing: 12) {
-                                ForEach(filtered) { item in
-                                    NavigationLink(value: item.persistentModelID) {
-                                        ClothingItemCard(item: item)
+                    if filtered.isEmpty {
+                        ContentUnavailableView(
+                            "No Items",
+                            systemImage: "tshirt",
+                            description: Text("No items match the current filter.")
+                        )
+                    } else {
+                        ScrollView {
+                            switch viewModel.displayMode {
+                            case .grid:
+                                LazyVGrid(columns: gridColumns, spacing: 12) {
+                                    ForEach(filtered) { item in
+                                        NavigationLink(value: item.persistentModelID) {
+                                            WardrobeGridCell(item: item)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
+                                .padding(.horizontal)
+
+                            case .list:
+                                LazyVStack(spacing: 12) {
+                                    ForEach(filtered) { item in
+                                        NavigationLink(value: item.persistentModelID) {
+                                            ClothingItemCard(item: item)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.horizontal)
                             }
-                            .padding(.horizontal)
                         }
                     }
                 }
@@ -79,8 +135,26 @@ struct WardrobeView: View {
                     HStack(spacing: 16) {
                         WeatherWidgetView(viewModel: weatherViewModel)
 
-                        Button {
-                            isShowingAddItem = true
+                        Menu {
+                            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                                Button {
+                                    scanViewModel.showingCamera = true
+                                } label: {
+                                    Label("Scan with Camera", systemImage: "camera")
+                                }
+                            }
+
+                            Button {
+                                isShowingPhotoPicker = true
+                            } label: {
+                                Label("Choose from Library", systemImage: "photo.on.rectangle")
+                            }
+
+                            Button {
+                                isShowingManualAdd = true
+                            } label: {
+                                Label("Add Manually", systemImage: "square.and.pencil")
+                            }
                         } label: {
                             Image(systemName: "plus")
                         }
@@ -95,13 +169,38 @@ struct WardrobeView: View {
                     }
                 }
             }
-            .sheet(isPresented: $isShowingAddItem) {
+            .sheet(isPresented: $isShowingManualAdd) {
                 AddItemView()
+            }
+            .photosPicker(isPresented: $isShowingPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+            .fullScreenCover(isPresented: $scanViewModel.showingCamera) {
+                ImagePicker(sourceType: .camera) { image in
+                    scanViewModel.analyzeImage(image)
+                }
+                .ignoresSafeArea()
             }
             .navigationDestination(for: PersistentIdentifier.self) { id in
                 if let item = allItems.first(where: { $0.persistentModelID == id }) {
                     ItemDetailView(item: item)
                 }
+            }
+            .navigationDestination(isPresented: $scanViewModel.showingResults) {
+                ResultsView(viewModel: scanViewModel)
+            }
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        scanViewModel.analyzeImage(image)
+                    }
+                }
+                selectedPhotoItem = nil
+            }
+            .onAppear {
+                scanViewModel.modelContext = modelContext
+                scanViewModel.styleViewModel = styleViewModel
+                styleViewModel.modelContext = modelContext
             }
         }
     }
