@@ -26,13 +26,16 @@ Attirely/
 │   ├── ClothingItemDTO.swift       # Codable struct (API parsing)
 │   ├── ScanSession.swift           # SwiftData @Model
 │   ├── Outfit.swift                # SwiftData @Model (outfit collection + weather snapshot)
-│   ├── OutfitSuggestionDTO.swift   # Codable struct (AI outfit parsing)
+│   ├── OutfitSuggestionDTO.swift   # Codable struct (AI outfit parsing, + spokenSummary)
 │   ├── StyleAnalysisDTO.swift      # Codable structs (AI style analysis parsing)
+│   ├── ChatMessage.swift           # Ephemeral struct (agent chat messages, no persistence)
+│   ├── AgentToolDTO.swift          # Tool call/result types for agent tool_use
 │   ├── WeatherData.swift           # Ephemeral structs (current + hourly weather)
 │   ├── UserProfile.swift           # SwiftData @Model (user prefs, profile, style questionnaire)
 │   └── StyleSummary.swift          # SwiftData @Model (template/AI style summary)
 ├── Services/
-│   ├── AnthropicService.swift      # Claude API calls (scan, duplicates, outfits, style analysis)
+│   ├── AnthropicService.swift      # Claude API calls (scan, duplicates, outfits, style analysis, agent)
+│   ├── AgentService.swift          # Stateless agent conversation service (tool_use, multi-turn)
 │   ├── ConfigManager.swift         # Reads API key from Config.plist
 │   ├── ImageStorageService.swift   # Save/load images on disk
 │   ├── LocationService.swift       # CoreLocation wrapper for user location
@@ -41,11 +44,12 @@ Attirely/
 │   ├── ScanViewModel.swift
 │   ├── WardrobeViewModel.swift
 │   ├── OutfitViewModel.swift       # Outfit creation, generation, favorites
+│   ├── AgentViewModel.swift        # Chat agent conversation state, tool-use loop, context building
 │   ├── WeatherViewModel.swift      # Weather state, location, fetch coordination
 │   ├── ProfileViewModel.swift      # Profile state, analytics, geocoding
-│   └── StyleViewModel.swift        # AI style analysis state, debounce, merge
+│   └── StyleViewModel.swift        # AI style analysis state, debounce, merge, agent insights
 ├── Views/
-│   ├── MainTabView.swift           # TabView (Scan + Outfits + Wardrobe + Profile)
+│   ├── MainTabView.swift           # TabView (Agent + Scan + Outfits + Wardrobe + Profile)
 │   ├── HomeView.swift
 │   ├── ResultsView.swift
 │   ├── ClothingItemCard.swift
@@ -62,6 +66,8 @@ Attirely/
 │   ├── AddItemView.swift           # Manual wardrobe item entry form
 │   ├── WeatherWidgetView.swift     # Compact toolbar weather indicator
 │   ├── WeatherDetailSheet.swift    # Full weather modal with hourly forecast
+│   ├── AgentView.swift             # Chat agent tab (messages, input, starters, weather chip)
+│   ├── AgentMessageBubble.swift    # Agent message rendering (text, outfit cards, item refs, insights)
 │   ├── ProfileView.swift           # Profile tab (details, prefs, analytics)
 │   └── WardrobeAnalyticsView.swift # Swift Charts wardrobe analytics
 ├── Helpers/
@@ -86,6 +92,7 @@ Attirely/
 
 ### Models (`Models/`)
 - `ClothingItem` is a SwiftData `@Model` class for persistence. `ClothingItemDTO` is a `Codable` struct for API parsing. `ScanSession`, `Outfit`, `UserProfile`, and `StyleSummary` are SwiftData `@Model`s. `OutfitSuggestionDTO` and `StyleAnalysisDTO` are `Codable` structs for AI response parsing.
+- `ChatMessage` is an ephemeral in-memory struct (no SwiftData) for agent conversation messages. `AgentToolDTO.swift` contains `ToolUseBlock`, `AgentTurn`, and typed tool input structs for Claude tool_use parsing.
 - No business logic, no API calls, no UI code.
 - DTOs own their `CodingKeys` for JSON mapping (snake_case API ↔ camelCase Swift).
 - `ClothingItem` uses `itemDescription` (not `description`) to avoid NSObject conflict.
@@ -156,6 +163,18 @@ Attirely/
 - `StyleAnalysisDTO.styleModes` defaults to empty array if null (resilient decoder)
 - Uses 2048 max tokens
 
+### Style Agent
+- Multi-turn conversation via `AgentService.sendMessage()` — stateless, one API call per invocation
+- Uses `system` top-level key for persistent context injection (weather, comfort preferences, style summary, wardrobe category counts)
+- Claude `tool_use` with three tools: `generateOutfit(occasion?, constraints?)`, `searchWardrobe(query)`, `updateStyleInsight(insight, confidence)`
+- Tool-use loop in `AgentViewModel` (max 5 iterations), not in service — enables future Siri single-turn reuse
+- Full wardrobe items loaded on-demand via tool execution, not in system prompt (token budget)
+- `AnthropicService.sendAgentRequest` returns full JSON dict (handles tool_use + text content blocks)
+- Outfits generated in chat are ephemeral until user taps "Save Outfit" → SwiftData insert + weather snapshot
+- Style insights appended to `StyleSummary.gapObservations` via `StyleViewModel.appendAgentInsight`
+- `OutfitSuggestionDTO.spokenSummary: String?` prepares for Siri voice output (v0.7)
+- Uses 2048 max tokens
+
 ### Weather API
 - **Primary**: Apple WeatherKit — requires WeatherKit entitlement
 - **Fallback**: Open-Meteo free API (`GET https://api.open-meteo.com/v1/forecast`), no API key needed
@@ -184,13 +203,14 @@ Attirely/
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.5c)
+## Current State (v0.6)
 - Camera and photo library scanning with Claude vision API for clothing detection
 - SwiftData persistence for clothing items, scan sessions, outfits, user profile, and style summary
 - Images stored on disk (Documents/clothing-images/, Documents/scan-images/, Documents/profile-images/)
 - Wardrobe view with grid/list toggle, category filtering, and item detail/edit with AI originals as reference
 - Duplicate detection: pre-filter by category+color, Claude-based comparison, user confirmation
-- Tab-based navigation: Scan, Outfits, Wardrobe, Profile
+- Tab-based navigation: Agent, Scan, Outfits, Wardrobe, Profile
+- **Style Agent chat tab**: multi-turn conversation with Claude using tool_use for outfit generation, wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Conversation starters. Designed for future Siri reuse via stateless `AgentService`
 - Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, deduplication, item match validation
 - Outfit display: layer-ordered cards (Outerwear → Full Body → Top → Bottom → Footwear → Accessory), favorites, AI reasoning
 - Manual item entry form with all attributes and optional photo
@@ -199,7 +219,7 @@ Attirely/
 - Profile: name, photo, temperature unit (°C/°F), theme (System/Light/Dark) with full dark mode, location override
 - Style & Comfort questionnaire: cold/heat sensitivity, layering preference, style identity, comfort vs appearance, weather dressing approach — stored on `UserProfile` with enum bridges
 - Template-based style summary via `StyleSummaryTemplate` (deterministic, no LLM), with manual edit support
-- AI style analysis: sends wardrobe + outfits to Claude, returns style modes/identity/gaps/weather behavior. Auto-triggers on data changes, merges incrementally into `StyleSummary`
+- AI style analysis: sends wardrobe + outfits to Claude, returns style modes/identity/gaps/weather behavior. Auto-triggers on data changes, merges incrementally into `StyleSummary`. Agent insights appended via `appendAgentInsight`
 - Enriched style profile display with mode cards, color swatches, seasonal patterns, gap observations
 - Comfort-aware and style-aware outfit generation using user preferences and AI-enriched summary
 - Wardrobe analytics: Swift Charts — category bar chart, formality donut chart, color distribution grid
@@ -259,50 +279,6 @@ StyleSummary (SwiftData @Model)
 
 ## Roadmap
 
-### v0.6 — Style Agent (Chat)
-- New **Agent tab** (tab order: Agent | Scan | Outfits | Wardrobe | Profile) with a conversational chat interface
-- Multi-turn conversation with Claude for style discussion, outfit generation, and wardrobe exploration
-- **Ephemeral sessions** — conversation history lives in-memory only (`AgentViewModel`), no persistence
-- **Shared generation core** — `AgentService` (UI-agnostic) accepts structured input (wardrobe, weather, preferences, user intent) and returns structured output. Both chat UI and future Siri surface use the same engine
-- Generation core supports **single-turn mode** (one request → one response, for Siri later) and **multi-turn mode** (ongoing conversation with message history)
-
-#### Agent Tools (Claude tool_use)
-The agent has tools it can invoke mid-conversation:
-- `generateOutfit(occasion?, constraints?)` — generates an outfit from the user's wardrobe; weather is always fetched fresh and required
-- `searchWardrobe(query)` — finds specific items matching a description/criteria
-- `updateStyleInsight(insight, confidence)` — captures durable style preference signals ("leaning minimalist", "never wears yellow") to queue for `StyleSummary` updates
-- Additional tools may be added as needed
-
-#### Context Injection Strategy
-- **Always injected** (system prompt): weather snapshot, comfort preferences, style summary, wardrobe stats
-- **Loaded on demand** (via tool use): full wardrobe items (when generating/searching), recent outfits (for dedup)
-- **Compact format** for wardrobe in context: one-line-per-item (`"ID | Navy Blazer | Outerwear/Jacket | Navy/None | Wool | Semi-Formal | Fall,Winter"`) to manage token budget
-
-#### Style Insight Extraction
-- Instead of storing chats, extract **deltas from baseline** — events that vary from the user's established preferences
-- Inline via `updateStyleInsight` tool use: Claude detects meaningful preference signals mid-conversation and calls the tool
-- Surface a subtle confirmation in chat ("Noted — you're leaning minimalist lately")
-- Insights accumulate and fold into the next `StyleSummary` analysis rather than directly rewriting fields
-
-#### Chat UI
-- Standard chat interface with messages list and text input
-- **Outfit cards inline** — reuse `OutfitRowCard` embedded in chat flow when the agent generates an outfit
-- **Save action** — inline "Save to Outfits" button on generated outfits (ephemeral chat, durable outfit)
-- **Item references** — tappable clothing item mentions linking to `ItemDetailView`
-- **Weather context** — subtle header/chip showing current weather the agent is working with
-- **Conversation starters** — empty state with suggested prompts ("What should I wear today?", "Help me plan outfits for a trip", "What's missing from my wardrobe?")
-
-#### New Files
-- `Models/ChatMessage.swift` — ephemeral struct for conversation messages (role, content, optional tool results)
-- `Models/AgentToolDTO.swift` — Codable structs for agent tool use requests/responses
-- `Services/AgentService.swift` — UI-agnostic generation core, multi-turn Claude API interaction with tool definitions
-- `ViewModels/AgentViewModel.swift` — conversation state, message history, tool result handling
-- `Views/AgentView.swift` — chat interface
-- `Views/AgentMessageBubble.swift` — individual message rendering (text, outfit cards, insight confirmations)
-
-#### Response Format
-- `OutfitSuggestionDTO` extended with `spokenSummary: String?` — 1-2 sentence natural-speech description of the outfit, generated alongside `reasoning`. Costs minimal tokens, prepares for Siri voice output
-
 ### v0.7 — Siri & HomePod Integration
 - **App Intents** framework (iOS 16+) wrapping the same `AgentService` generation core
 - Two intents:
@@ -339,3 +315,6 @@ The agent has tools it can invoke mid-conversation:
 - Share outfits
 - Seasonal wardrobe rotation suggestions
 - Virtual try-on (pose estimation + outfit overlay)
+
+## Maintenance
+- After implementing a version milestone, update this `CLAUDE.md` (current state, project structure, API details, roadmap) and `README.md` to reflect the changes.
