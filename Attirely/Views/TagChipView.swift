@@ -6,26 +6,34 @@ struct TagChipView: View {
     var onTap: (() -> Void)? = nil
 
     var body: some View {
-        Button {
-            onTap?()
-        } label: {
-            Text(tag.name)
-                .font(.caption2)
-                .fontWeight(.medium)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(chipBackground)
-                .foregroundStyle(chipForeground)
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule().stroke(
-                        isSelected ? chipForeground.opacity(0.4) : Color.clear,
-                        lineWidth: 1
-                    )
-                )
+        if let onTap {
+            Button {
+                onTap()
+            } label: {
+                chipLabel
+            }
+            .buttonStyle(.plain)
+        } else {
+            chipLabel
+                .allowsHitTesting(false)
         }
-        .buttonStyle(.plain)
-        .disabled(onTap == nil)
+    }
+
+    private var chipLabel: some View {
+        Text(tag.name)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(chipBackground)
+            .foregroundStyle(chipForeground)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().stroke(
+                    isSelected ? chipForeground.opacity(0.4) : Color.clear,
+                    lineWidth: 1
+                )
+            )
     }
 
     private var chipBackground: Color {

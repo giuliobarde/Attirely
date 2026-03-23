@@ -18,16 +18,13 @@ struct BulkTagEditSheet: View {
     var body: some View {
         NavigationStack {
             List(allTags) { tag in
-                Button {
-                    cycleState(for: tag)
-                } label: {
-                    HStack {
-                        TagChipView(tag: tag)
-                        Spacer()
-                        stateIndicator(for: tag)
-                    }
+                HStack {
+                    TagChipView(tag: tag)
+                    Spacer()
+                    stateIndicator(for: tag)
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture { cycleState(for: tag) }
                 .listRowBackground(Theme.cardFill)
             }
             .scrollContentBackground(.hidden)
