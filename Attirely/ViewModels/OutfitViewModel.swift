@@ -12,8 +12,10 @@ class OutfitViewModel {
     var selectedOutfitIDs: Set<PersistentIdentifier> = []
 
     // AI generation context
-    var selectedOccasion: String?
+    var selectedOccasionTier: OccasionTier?
     var selectedSeason: String?
+
+    var selectedOccasion: String? { selectedOccasionTier?.rawValue }
 
     // AI generation state
     var isGenerating = false
@@ -125,6 +127,11 @@ class OutfitViewModel {
         isGenerating = true
         errorMessage = nil
 
+        // Apply occasion-based filtering
+        let filterResult = OccasionFilter.filterItems(allItems, for: selectedOccasionTier)
+        let filteredItems = filterResult.items
+        let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
+
         // Collect existing outfit item-ID sets for dedup
         let existingOutfits = (try? modelContext.fetch(FetchDescriptor<Outfit>())) ?? []
         let existingItemSets = existingOutfits.map { outfit in
@@ -139,19 +146,20 @@ class OutfitViewModel {
         Task {
             do {
                 let suggestions = try await AnthropicService.generateOutfits(
-                    from: allItems,
+                    from: filteredItems,
                     occasion: selectedOccasion,
                     season: selectedSeason,
                     weatherContext: weatherViewModel?.weatherContextString,
                     comfortPreferences: StyleContextHelper.comfortPreferencesString(from: userProfile),
                     styleSummary: styleSummaryText,
+                    filterContext: filterContext,
                     existingOutfitItemSets: existingItemSets,
                     availableTagNames: tagNames
                 )
 
                 var created: [Outfit] = []
                 for suggestion in suggestions {
-                    let matchedItems = allItems.filter {
+                    let matchedItems = filteredItems.filter {
                         suggestion.itemIDs.contains($0.id.uuidString)
                     }
                     // Require at least 3 matched items, or all suggested if fewer than 3
@@ -167,6 +175,11 @@ class OutfitViewModel {
                         items: matchedItems,
                         tags: resolvedTags
                     )
+
+                    // Merge client-side + AI wardrobe gap notes
+                    let mergedGaps = OccasionFilter.mergeGaps(clientSide: filterResult.wardrobeGaps, aiSide: suggestion.wardrobeGaps)
+                    outfit.wardrobeGaps = Outfit.encodeGaps(mergedGaps)
+
                     captureWeatherSnapshot(on: outfit)
                     modelContext.insert(outfit)
                     created.append(outfit)
@@ -191,7 +204,7 @@ class OutfitViewModel {
     }
 
     func resetGenerationContext() {
-        selectedOccasion = nil
+        selectedOccasionTier = nil
         selectedSeason = nil
         errorMessage = nil
     }

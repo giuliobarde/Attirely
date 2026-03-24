@@ -149,6 +149,35 @@ struct OutfitDetailView: View {
                     )
                     .padding(.horizontal)
                 }
+
+                // Wardrobe gap notes
+                if !outfit.wardrobeGapsDecoded.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            Text("Wardrobe Notes")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                        ForEach(outfit.wardrobeGapsDecoded, id: \.self) { gap in
+                            Text("• \(gap)")
+                                .font(.caption)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.cardFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Theme.cardBorder, lineWidth: 0.5)
+                    )
+                    .padding(.horizontal)
+                }
             }
             .padding(.vertical)
         }

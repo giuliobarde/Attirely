@@ -251,7 +251,6 @@ struct AnthropicService {
     - Limit to 3-4 colors maximum across the entire outfit
     - Avoid mixing more than 2 patterns
     - Keep formality level consistent across all items
-    - Consider the provided occasion and season context if given
     - When weather context is provided, prioritize weather-appropriate choices:
       - Below 5°C: include outerwear, prioritize heavyweight fabrics, avoid linen/lightweight items
       - 5–15°C: include a layer (jacket or cardigan), favor midweight fabrics
@@ -263,11 +262,12 @@ struct AnthropicService {
 
     Return ONLY a valid JSON array with exactly one element. The element must have:
     - "name": a short, evocative outfit name (e.g., "Weekend Casual", "Office Ready", "Evening Out")
-    - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal"
+    - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal", "Cocktail", "Black Tie", "White Tie", "Gym/Athletic", "Outdoor/Active"
     - "item_ids": array of item id strings from the list below (use ONLY the provided IDs, do not invent new ones)
-    - "reasoning": one sentence explaining why this combination works, including a styling tip
+    - "reasoning": one sentence explaining why this combination works, including a styling tip. If the wardrobe lacks ideal items for the occasion, acknowledge the compromise
     - "spoken_summary": a natural, conversational 1-2 sentence description of the outfit suitable for voice output (e.g., "I'd go with your navy blazer over the white oxford, paired with dark jeans and brown Chelsea boots — polished but relaxed.")
     - "tags": array of 1-3 tag name strings chosen from the available tags list (empty array if no tags list provided)
+    - "wardrobe_gaps": array of strings — helpful investment suggestions for item types missing from the wardrobe for this occasion (empty array if the wardrobe fully covers the occasion). Each string should be a concise suggestion like "Consider adding formal dress shoes for black-tie events."
 
     No markdown, no explanation, no code fences. Just the raw JSON array.
     """
@@ -279,6 +279,7 @@ struct AnthropicService {
         weatherContext: String? = nil,
         comfortPreferences: String? = nil,
         styleSummary: String? = nil,
+        filterContext: OccasionFilterContext? = nil,
         existingOutfitItemSets: [[String]] = [],
         availableTagNames: [String] = []
     ) async throws -> [OutfitSuggestionDTO] {
@@ -291,17 +292,40 @@ struct AnthropicService {
         // Build context BEFORE items so constraints are prominent
         var contextSection = ""
 
+        // Occasion / dress code (structured block replaces plain text)
+        if let filterContext {
+            contextSection += "\(filterContext.tier.dressCodeInstructions)\n"
+            contextSection += "\(filterContext.tier.priorityHierarchy)\n\n"
+        } else if let occasion {
+            contextSection += "Occasion preference: \(occasion)\n\n"
+        }
+
         if let comfortPreferences {
             contextSection += "COMFORT CONSTRAINTS (override style preferences when conflicting):\n\(comfortPreferences)\n\n"
         }
 
+        // Style summary with weight label based on occasion
         if let styleSummary {
-            contextSection += "USER STYLE PROFILE (use as guidance):\n\(styleSummary)\n\n"
+            if let filterContext {
+                contextSection += "\(filterContext.tier.styleWeightInstruction)\n\(styleSummary)\n\n"
+            } else {
+                contextSection += "USER STYLE PROFILE (use as guidance):\n\(styleSummary)\n\n"
+            }
         }
 
-        if let occasion { contextSection += "Occasion preference: \(occasion)\n" }
         if let season { contextSection += "Current season: \(season)\n" }
         if let weatherContext { contextSection += "Current weather:\n\(weatherContext)\n" }
+
+        // Wardrobe limitation notice when filters were relaxed
+        if let filterContext, !filterContext.wardrobeGaps.isEmpty {
+            contextSection += "\nWARDROBE LIMITATIONS:\n"
+            contextSection += "The user's wardrobe lacks ideal items for this occasion. Compromises were made:\n"
+            for gap in filterContext.wardrobeGaps {
+                contextSection += "- \(gap.category): \(gap.description)\n"
+            }
+            contextSection += "Work with the available items and select the most appropriate options. Acknowledge compromises in your reasoning.\n"
+            contextSection += "Include wardrobe gap suggestions in the \"wardrobe_gaps\" field.\n"
+        }
 
         var itemList = ""
         for item in items {

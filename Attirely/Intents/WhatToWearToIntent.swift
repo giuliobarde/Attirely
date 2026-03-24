@@ -6,6 +6,8 @@ enum OutfitOccasion: String, AppEnum {
     case dateNight = "date night"
     case work = "work"
     case formal = "formal"
+    case cocktail = "cocktail"
+    case blackTie = "black tie"
     case gym = "gym"
     case travel = "travel"
     case outdoor = "outdoor"
@@ -17,10 +19,26 @@ enum OutfitOccasion: String, AppEnum {
         .dateNight: "Date Night",
         .work: "Work",
         .formal: "Formal",
+        .cocktail: "Cocktail",
+        .blackTie: "Black Tie",
         .gym: "Gym",
         .travel: "Travel",
         .outdoor: "Outdoor"
     ]
+
+    var occasionTier: OccasionTier {
+        switch self {
+        case .casual: .casual
+        case .dateNight: .smartCasual
+        case .work: .businessCasual
+        case .formal: .formal
+        case .cocktail: .cocktail
+        case .blackTie: .blackTie
+        case .gym: .gymAthletic
+        case .travel: .casual
+        case .outdoor: .outdoorActive
+        }
+    }
 }
 
 struct WhatToWearToIntent: AppIntent {

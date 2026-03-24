@@ -28,8 +28,8 @@ Attirely/
 │   ├── ClothingItem.swift          # SwiftData @Model (persistent)
 │   ├── ClothingItemDTO.swift       # Codable struct (API parsing, includes tags field)
 │   ├── ScanSession.swift           # SwiftData @Model
-│   ├── Outfit.swift                # SwiftData @Model (outfit collection + weather snapshot)
-│   ├── OutfitSuggestionDTO.swift   # Codable struct (AI outfit parsing, + spokenSummary)
+│   ├── Outfit.swift                # SwiftData @Model (outfit collection + weather snapshot + wardrobe gaps)
+│   ├── OutfitSuggestionDTO.swift   # Codable struct (AI outfit parsing, + spokenSummary, wardrobeGaps)
 │   ├── StyleAnalysisDTO.swift      # Codable structs (AI style analysis parsing)
 │   ├── ChatMessage.swift           # Ephemeral struct (agent chat messages, no persistence)
 │   ├── AgentToolDTO.swift          # Tool call/result types for agent tool_use (4 tools: generateOutfit, searchOutfits, searchWardrobe, updateStyleInsight)
@@ -64,7 +64,7 @@ Attirely/
 │   ├── OutfitsView.swift           # Outfit list with favorites filter
 │   ├── OutfitDetailView.swift      # Layer-ordered card stack view with inline edit mode
 │   ├── OutfitRowCard.swift         # Compact outfit card for list
-│   ├── OutfitGenerationContextSheet.swift  # AI generation context picker
+│   ├── OutfitGenerationContextSheet.swift  # AI generation context picker (grouped OccasionTier picker)
 │   ├── ItemPickerSheet.swift       # Manual outfit item selection
 │   ├── AddItemView.swift           # Manual wardrobe item entry form + tag selection
 │   ├── WeatherWidgetView.swift     # Compact toolbar weather indicator
@@ -82,7 +82,7 @@ Attirely/
 ├── Intents/
 │   ├── SiriOutfitService.swift     # Siri outfit selection algorithm (tagged pool → AI fallback)
 │   ├── WhatToWearTodayIntent.swift # "What should I wear today?" App Intent
-│   ├── WhatToWearToIntent.swift    # "What should I wear to [occasion]?" App Intent + OutfitOccasion AppEnum
+│   ├── WhatToWearToIntent.swift    # "What should I wear to [occasion]?" App Intent + OutfitOccasion AppEnum (incl. cocktail, black tie)
 │   └── AttirelyShortcuts.swift     # AppShortcutsProvider with Siri phrases
 ├── Helpers/
 │   ├── Theme.swift                 # Brand design system: color tokens, ViewModifiers, ButtonStyles
@@ -94,7 +94,8 @@ Attirely/
 │   ├── StyleSummaryTemplate.swift  # Deterministic style summary from questionnaire
 │   ├── StyleContextHelper.swift    # Shared comfort/style/weather context builders (DRY helper)
 │   ├── TagSeeder.swift             # Idempotent predefined tag seeding (outfit + item scopes)
-│   └── TagManager.swift            # Shared tag CRUD helper (create, rename, delete, resolve)
+│   ├── TagManager.swift            # Shared tag CRUD helper (create, rename, delete, resolve)
+│   └── OccasionFilter.swift        # OccasionTier enum, hybrid client-side item filtering, wardrobe gap generation
 └── Resources/
     ├── Config.plist.example
     └── Assets.xcassets
@@ -165,8 +166,18 @@ Attirely/
 - Response parsing: extract `content[0].text`, decode as JSON array of `ClothingItemDTO`
 
 ### Outfit Generation
-- Text-only request — sends wardrobe item attributes with UUIDs
-- Generates exactly 1 outfit per request; returns `OutfitSuggestionDTO` with `name`, `occasion`, `item_ids`, `reasoning`, `spoken_summary`, `tags`
+- Text-only request — sends **filtered** wardrobe item attributes with UUIDs (occasion-based pre-filtering via `OccasionFilter`)
+- Generates exactly 1 outfit per request; returns `OutfitSuggestionDTO` with `name`, `occasion`, `item_ids`, `reasoning`, `spoken_summary`, `tags`, `wardrobe_gaps`
+- **Occasion-based hybrid filtering** (`OccasionFilter.swift`):
+  - `OccasionTier` enum: Casual, Smart Casual, Business Casual, Business, Cocktail, Formal, Black Tie, White Tie, Gym/Athletic, Outdoor/Active
+  - Client-side hard-exclude by formality level + type keywords + fabric (e.g., sneakers excluded for Formal, denim excluded for Black Tie)
+  - **Progressive relaxation**: if filtering empties a required category (Top/Bottom/Footwear), all original items in that category are restored
+  - **Wardrobe gap notes**: when filters relax, generates context-aware investment suggestions (e.g., "No black-tie footwear found. Consider investing in patent leather oxfords.")
+  - Gap notes merged from client-side filter + AI response, persisted on `Outfit.wardrobeGaps`, displayed in OutfitDetailView and AgentMessageBubble
+  - Small wardrobes (< 5 items) skip filtering entirely
+- **Style weight scaling**: style profile relevance varies by occasion — HIGH for casual, MEDIUM for business, LOW for formal/activity (dress code compliance first)
+- **Dress code instructions**: occasion-specific rules injected into prompt (e.g., Black Tie strict dress code, Gym function-first)
+- **Priority hierarchy**: shifts by occasion — casual prioritizes aesthetics, formal prioritizes dress code compliance
 - **AI auto-tagging**: available tag names injected into prompt; Claude returns 1-3 tag names per outfit; client-side resolution via normalized name lookup, unrecognized names silently dropped
 - Deduplication via `existingOutfitItemSets` (sorted item-ID arrays for up to 20 existing outfits)
 - Client-side validation: minimum 3 matched items before saving; degraded outfits with hallucinated IDs are skipped
@@ -224,7 +235,7 @@ Attirely/
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.9)
+## Current State (v0.9.1)
 - Camera and photo library scanning with Claude vision API for clothing detection, **AI auto-tagging on scan**
 - SwiftData persistence for clothing items, scan sessions, outfits, user profile, style summary, and tags
 - Images stored on disk (Documents/clothing-images/, Documents/scan-images/, Documents/profile-images/)
@@ -233,7 +244,8 @@ Attirely/
 - Tab-based navigation: Agent, Wardrobe, Outfits, Profile (Scan merged into Wardrobe — toolbar menu + empty state onboarding)
 - **Style Agent chat tab**: multi-turn conversation with Claude using tool_use for outfit generation, **outfit search (intent detection)**, wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Conversation starters. Designed for future Siri reuse via stateless `AgentService`
 - **Agent intent detection**: system prompt classifies "new/surprise" → generateOutfit, "familiar/go-to" → searchOutfits, "specific items" → searchWardrobe. `searchOutfits` tool filters saved outfits by tags/query, returns as inline cards
-- Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, deduplication, item match validation
+- **Occasion-based outfit filtering** (`OccasionFilter.swift`): hybrid client-side pre-filtering + enhanced AI prompt. `OccasionTier` enum (10 tiers from Casual to White Tie + Gym/Outdoor). Progressive relaxation when filters empty a required category. Wardrobe gap notes with investment suggestions. Style weight scaling by occasion (HIGH casual → LOW formal). Dress code instructions and priority hierarchies per tier. Used by OutfitViewModel, AgentViewModel, and SiriOutfitService
+- Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, **occasion-based item filtering**, deduplication, item match validation, **wardrobe gap notes**
 - Outfit display: layer-ordered cards (Outerwear → Full Body → Top → Bottom → Footwear → Accessory), favorites, AI reasoning
 - **Scoped tagging system**: `Tag` SwiftData model with `TagScope` (.outfit, .item) for separate tag pools. `scopeRaw` stored property, enforced uniqueness by name+scope in code via `TagManager`. **Outfit tags**: 12 predefined (seasonal, occasion, `siri`), custom user tags, AI auto-tagging. **Item tags**: 8 predefined (seasonal overlap + everyday, statement, layering, seasonal-rotate), custom user tags, AI auto-tagging on scan. Tag chips, filter bars, picker sheets, and bulk edit all scope-aware
 - Tag management in Profile settings: sections for Outfit Tags and Item Tags, each with predefined/custom subsections, CRUD via `TagManager`
@@ -253,7 +265,7 @@ Attirely/
 - Error handling: missing key, network, API, empty results, insufficient wardrobe
 - **Siri & HomePod integration** via App Intents framework (in-app, no extension target):
   - **"What should I wear today?"** — weather + preferences + wardrobe → outfit → spoken response
-  - **"What should I wear to [occasion]?"** — occasion-constrained (`OutfitOccasion` AppEnum: casual, date night, work, formal, gym, travel, outdoor) → spoken response
+  - **"What should I wear to [occasion]?"** — occasion-constrained (`OutfitOccasion` AppEnum: casual, date night, work, formal, cocktail, black tie, gym, travel, outdoor) → spoken response
   - **Siri outfit selection**: queries outfits tagged "siri", filters by season/weather/occasion, picks randomly from matching pool
   - **AI generation fallback**: toggled off by default in Profile settings. When enabled and no siri-tagged outfits match, generates via `AnthropicService` and auto-saves with "siri" tag (grows pool over time)
   - **Template-based spoken summaries** for tagged outfits (instant, no API call). AI-generated outfits use `spokenSummary` from DTO
@@ -285,9 +297,11 @@ Outfit (SwiftData @Model)
 ├── id: UUID
 ├── name: String?, occasion: String?, reasoning: String?
 ├── isAIGenerated: Bool, isFavorite: Bool, createdAt: Date
+├── wardrobeGaps: String?         # JSON-encoded [String] — wardrobe gap notes/suggestions
 ├── items: [ClothingItem]         # @Relationship(deleteRule: .nullify)
 ├── tags: [Tag]                   # @Relationship — many-to-many via Tag model
 ├── displayName: String           # computed: name → occasion → formatted date
+├── wardrobeGapsDecoded: [String] # computed: decodes wardrobeGaps JSON or returns []
 ├── weatherTempAtCreation: Double?, weatherFeelsLikeAtCreation: Double?
 ├── seasonAtCreation: String?, monthAtCreation: Int?
 ├── lastSuggestedBySiriAt: Date?   # auto-updated when Siri suggests this outfit
@@ -387,6 +401,37 @@ Tag (SwiftData @Model)
 - Toggle for "AI outfit generation" under new "Siri" section in Profile preferences
 - Warning text when enabled: explains 5–15s delay
 - Help text: suggests tagging outfits with "siri" for instant responses
+
+### v0.9.1 — Occasion-Based Outfit Filtering ✅
+
+#### Hybrid Filtering System (`OccasionFilter.swift`)
+- `OccasionTier` enum: 10 tiers — Casual, Smart Casual, Business Casual, Business, Cocktail, Formal, Black Tie, White Tie, Gym/Athletic, Outdoor/Active
+- Client-side hard-exclude filtering by formality level, type keywords (substring match on `item.type`), and fabric
+- Gym/Athletic uses inverted logic: items must match athletic keywords OR be casual Top/Bottom
+- **Progressive relaxation**: if all items in a required category (Top, Bottom, Footwear) are filtered out, all original items for that category are restored
+- Small wardrobes (< 5 items) skip filtering entirely
+- `OccasionTier.pickerGroups` provides grouped picker structure (Everyday, Work, Dress Code, Active)
+- `OccasionTier(fromString:)` maps free-form strings (agent tool calls) via keyword matching
+
+#### Wardrobe Gap Notes
+- `WardrobeGap` struct: category, description, investment suggestion — generated when filters relax
+- Context-aware suggestions vary by category × occasion (e.g., Footwear for Black Tie → "patent leather oxfords")
+- Client-side gaps merged with AI-returned `wardrobe_gaps` via `OccasionFilter.mergeGaps()`
+- Persisted on `Outfit.wardrobeGaps: String?` (JSON-encoded `[String]`), decoded via `wardrobeGapsDecoded`
+- Displayed in OutfitDetailView (card with warning icon) and AgentMessageBubble (inline lightbulb notes)
+
+#### Enhanced Outfit Generation Prompt
+- `OccasionFilterContext` passed to `AnthropicService.generateOutfits` with tier, style weight, gaps, relaxed categories
+- Dress code instructions injected per occasion tier (e.g., Black Tie strict rules, Gym function-first)
+- Style weight scaling: HIGH (casual) → MEDIUM (business) → LOW (formal/activity) — controls style profile influence
+- Priority hierarchy shifts by occasion (casual: aesthetics first; formal: dress code compliance first)
+- `OutfitSuggestionDTO.wardrobeGaps: [String]` — AI returns investment suggestions (resilient decoder)
+
+#### Expanded Occasion Options
+- `OutfitGenerationContextSheet` uses grouped `OccasionTier` picker (replaces flat string array)
+- `OutfitViewModel.selectedOccasionTier: OccasionTier?` replaces `selectedOccasion: String?`
+- `AgentService` tool description updated with expanded occasion list
+- `OutfitOccasion` AppEnum (Siri): added `cocktail` and `blackTie` cases with `occasionTier` computed property
 
 ### v0.10 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images

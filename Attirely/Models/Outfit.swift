@@ -18,6 +18,9 @@ final class Outfit {
     var seasonAtCreation: String?
     var monthAtCreation: Int?
 
+    // Wardrobe gap notes (JSON-encoded [String])
+    var wardrobeGaps: String?
+
     // Siri integration
     var lastSuggestedBySiriAt: Date?
 
@@ -26,6 +29,20 @@ final class Outfit {
 
     @Relationship
     var tags: [Tag] = []
+
+    var wardrobeGapsDecoded: [String] {
+        guard let data = wardrobeGaps?.data(using: .utf8),
+              let array = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return array
+    }
+
+    static func encodeGaps(_ gaps: [String]) -> String? {
+        guard !gaps.isEmpty,
+              let data = try? JSONEncoder().encode(gaps)
+        else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
 
     var displayName: String {
         if let name, !name.isEmpty { return name }

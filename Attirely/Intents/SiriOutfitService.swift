@@ -236,6 +236,16 @@ enum SiriOutfitService {
             throw SiriOutfitError.apiKeyMissing
         }
 
+        // Apply occasion-based filtering
+        let tier = occasion.flatMap { OccasionTier(fromString: $0) }
+        let filterResult = OccasionFilter.filterItems(wardrobeItems, for: tier)
+        let filteredItems = filterResult.items
+        let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
+
+        guard filteredItems.count >= 2 else {
+            throw SiriOutfitError.noWardrobeItems
+        }
+
         let weatherContext = snapshot.map { StyleContextHelper.weatherContextString(from: $0) }
         let comfortPrefs = StyleContextHelper.comfortPreferencesString(from: profile)
         let styleText = StyleContextHelper.styleContextString(from: styleSummary)
@@ -248,12 +258,13 @@ enum SiriOutfitService {
         let tagNames = outfitTags.map(\.name)
 
         let suggestions = try await AnthropicService.generateOutfits(
-            from: wardrobeItems,
+            from: filteredItems,
             occasion: occasion,
             season: season,
             weatherContext: weatherContext,
             comfortPreferences: comfortPrefs,
             styleSummary: styleText,
+            filterContext: filterContext,
             existingOutfitItemSets: Array(existingItemSets),
             availableTagNames: tagNames
         )
@@ -262,7 +273,7 @@ enum SiriOutfitService {
             throw SiriOutfitError.generationFailed("Try again in a moment.")
         }
 
-        let matchedItems = wardrobeItems.filter {
+        let matchedItems = filteredItems.filter {
             suggestion.itemIDs.contains($0.id.uuidString)
         }
         let minRequired = min(3, suggestion.itemIDs.count)
@@ -285,6 +296,10 @@ enum SiriOutfitService {
             items: matchedItems,
             tags: resolvedTags
         )
+
+        // Merge wardrobe gap notes
+        let mergedGaps = OccasionFilter.mergeGaps(clientSide: filterResult.wardrobeGaps, aiSide: suggestion.wardrobeGaps)
+        outfit.wardrobeGaps = Outfit.encodeGaps(mergedGaps)
 
         // Capture weather snapshot
         if let snapshot {

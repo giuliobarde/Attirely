@@ -172,6 +172,12 @@ class AgentViewModel {
             let apiKey = try ConfigManager.apiKey()
             _ = apiKey // used by AnthropicService internally
 
+            // Map free-form occasion string to OccasionTier and filter items
+            let tier = input.occasion.flatMap { OccasionTier(fromString: $0) }
+            let filterResult = OccasionFilter.filterItems(wardrobeItems, for: tier)
+            let filteredItems = filterResult.items
+            let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
+
             let existingItemSets = allOutfits.map { outfit in
                 outfit.items.map { $0.id.uuidString }.sorted()
             }
@@ -182,19 +188,20 @@ class AgentViewModel {
             let tagNames = outfitTags.map(\.name)
 
             let suggestions = try await AnthropicService.generateOutfits(
-                from: wardrobeItems,
+                from: filteredItems,
                 occasion: input.occasion,
                 season: weatherViewModel?.suggestedSeason,
                 weatherContext: weatherViewModel?.weatherContextString,
                 comfortPreferences: StyleContextHelper.comfortPreferencesString(from: userProfile),
                 styleSummary: styleSummaryText,
+                filterContext: filterContext,
                 existingOutfitItemSets: existingItemSets,
                 availableTagNames: tagNames
             )
 
             var createdOutfits: [Outfit] = []
             for suggestion in suggestions {
-                let matchedItems = wardrobeItems.filter {
+                let matchedItems = filteredItems.filter {
                     suggestion.itemIDs.contains($0.id.uuidString)
                 }
                 let minRequired = min(3, suggestion.itemIDs.count)
@@ -209,6 +216,11 @@ class AgentViewModel {
                     items: matchedItems,
                     tags: resolvedTags
                 )
+
+                // Merge client-side + AI wardrobe gap notes
+                let mergedGaps = OccasionFilter.mergeGaps(clientSide: filterResult.wardrobeGaps, aiSide: suggestion.wardrobeGaps)
+                outfit.wardrobeGaps = Outfit.encodeGaps(mergedGaps)
+
                 createdOutfits.append(outfit)
             }
 

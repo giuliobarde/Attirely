@@ -49,6 +49,22 @@ struct AgentMessageBubble: View {
                 VStack(alignment: .leading, spacing: 8) {
                     OutfitRowCard(outfit: outfit) { }
 
+                    // Wardrobe gap notes
+                    if !outfit.wardrobeGapsDecoded.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(outfit.wardrobeGapsDecoded, id: \.self) { gap in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Image(systemName: "lightbulb.max")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                    Text(gap)
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.secondaryText)
+                                }
+                            }
+                        }
+                    }
+
                     if !isSaved(outfit) {
                         Button {
                             onSaveOutfit(outfit)

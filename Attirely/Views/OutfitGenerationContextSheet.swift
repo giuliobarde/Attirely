@@ -7,7 +7,6 @@ struct OutfitGenerationContextSheet: View {
     var userProfile: UserProfile?
     @Environment(\.dismiss) private var dismiss
 
-    private let occasions = ["Casual", "Smart Casual", "Business Casual", "Business", "Formal"]
     private let seasons = ["Spring", "Summer", "Fall", "Winter"]
 
     var body: some View {
@@ -35,10 +34,14 @@ struct OutfitGenerationContextSheet: View {
                 }
 
                 Section {
-                    Picker("Occasion", selection: $viewModel.selectedOccasion) {
-                        Text("Any").tag(String?.none)
-                        ForEach(occasions, id: \.self) { occasion in
-                            Text(occasion).tag(Optional(occasion))
+                    Picker("Occasion", selection: $viewModel.selectedOccasionTier) {
+                        Text("Any").tag(OccasionTier?.none)
+                        ForEach(OccasionTier.pickerGroups) { group in
+                            Section(group.label) {
+                                ForEach(group.items) { tier in
+                                    Text(tier.rawValue).tag(Optional(tier))
+                                }
+                            }
                         }
                     }
 

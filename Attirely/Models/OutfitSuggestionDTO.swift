@@ -7,11 +7,13 @@ struct OutfitSuggestionDTO: Codable {
     let reasoning: String
     let spokenSummary: String?
     let tags: [String]
+    let wardrobeGaps: [String]
 
     enum CodingKeys: String, CodingKey {
         case name, occasion, reasoning, tags
         case itemIDs = "item_ids"
         case spokenSummary = "spoken_summary"
+        case wardrobeGaps = "wardrobe_gaps"
     }
 
     init(from decoder: Decoder) throws {
@@ -22,5 +24,6 @@ struct OutfitSuggestionDTO: Codable {
         reasoning = try container.decode(String.self, forKey: .reasoning)
         spokenSummary = try container.decodeIfPresent(String.self, forKey: .spokenSummary)
         tags = (try? container.decodeIfPresent([String].self, forKey: .tags)) ?? []
+        wardrobeGaps = (try? container.decodeIfPresent([String].self, forKey: .wardrobeGaps)) ?? []
     }
 }

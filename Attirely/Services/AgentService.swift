@@ -65,7 +65,7 @@ struct AgentService {
                 "properties": [
                     "occasion": [
                         "type": "string",
-                        "description": "Optional occasion context, e.g. Casual, Smart Casual, Business Casual, Business, Formal, or a specific event description."
+                        "description": "Optional occasion context. One of: Casual, Smart Casual, Business Casual, Business, Cocktail, Formal, Black Tie, White Tie, Gym/Athletic, Outdoor/Active, or a specific event description."
                     ],
                     "constraints": [
                         "type": "string",
