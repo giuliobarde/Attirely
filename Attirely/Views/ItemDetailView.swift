@@ -6,6 +6,8 @@ struct ItemDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirmation = false
+    @State private var itemTags: [Tag] = []
+    @State private var isShowingTagPicker = false
 
     private let allSeasons = ["Spring", "Summer", "Fall", "Winter"]
 
@@ -60,6 +62,30 @@ struct ItemDetailView: View {
                 }
             }
 
+            // Tags
+            Section("Tags") {
+                if itemTags.isEmpty {
+                    Text("No tags")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(itemTags) { tag in
+                                TagChipView(tag: tag)
+                            }
+                        }
+                    }
+                }
+
+                Button {
+                    isShowingTagPicker = true
+                } label: {
+                    Label("Edit Tags", systemImage: "tag")
+                        .foregroundStyle(Theme.champagne)
+                }
+            }
+
             // Description
             Section("Description") {
                 VStack(alignment: .leading, spacing: 4) {
@@ -102,11 +128,16 @@ struct ItemDetailView: View {
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
+                    item.tags = itemTags
                     item.updatedAt = Date()
                     try? modelContext.save()
                     dismiss()
                 }
             }
+        }
+        .onAppear { itemTags = item.tags }
+        .sheet(isPresented: $isShowingTagPicker) {
+            TagPickerSheet(selectedTags: $itemTags, scope: .item)
         }
         .confirmationDialog("Delete this item?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {

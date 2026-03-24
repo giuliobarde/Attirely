@@ -3,13 +3,25 @@ import SwiftData
 
 struct TagFilterBar: View {
     @Binding var selectedTagIDs: Set<PersistentIdentifier>
-    let outfits: [Outfit]
+    let scope: TagScope
+    var outfits: [Outfit] = []
+    var items: [ClothingItem] = []
     @Query(sort: \Tag.name) private var allTags: [Tag]
 
     private var usedTags: [Tag] {
-        allTags.filter { tag in
-            outfits.contains { outfit in
-                outfit.tags.contains { $0.persistentModelID == tag.persistentModelID }
+        let scopedTags = allTags.filter { $0.scope == scope }
+        switch scope {
+        case .outfit:
+            return scopedTags.filter { tag in
+                outfits.contains { outfit in
+                    outfit.tags.contains { $0.persistentModelID == tag.persistentModelID }
+                }
+            }
+        case .item:
+            return scopedTags.filter { tag in
+                items.contains { item in
+                    item.tags.contains { $0.persistentModelID == tag.persistentModelID }
+                }
             }
         }
     }

@@ -4,6 +4,7 @@ import PhotosUI
 
 struct WardrobeView: View {
     @Query(sort: \ClothingItem.createdAt, order: .reverse) private var allItems: [ClothingItem]
+    @Query(sort: \Tag.name) private var allTags: [Tag]
     @State private var viewModel = WardrobeViewModel()
     @State private var scanViewModel = ScanViewModel()
     @State private var isShowingManualAdd = false
@@ -22,7 +23,7 @@ struct WardrobeView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if !allItems.isEmpty {
-                    // Category filter — only when wardrobe has items
+                    // Category filter
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(WardrobeCategory.allCases, id: \.self) { category in
@@ -38,6 +39,13 @@ struct WardrobeView: View {
                         .padding(.horizontal)
                     }
                     .padding(.vertical, 8)
+
+                    // Tag filter bar
+                    TagFilterBar(
+                        selectedTagIDs: $viewModel.selectedTagIDs,
+                        scope: .item,
+                        items: allItems
+                    )
                 }
 
                 if allItems.isEmpty {
@@ -93,21 +101,46 @@ struct WardrobeView: View {
                     let filtered = viewModel.filteredItems(from: allItems)
 
                     if filtered.isEmpty {
-                        ContentUnavailableView(
-                            "No Items",
-                            systemImage: "tshirt",
-                            description: Text("No items match the current filter.")
-                        )
+                        if !viewModel.selectedTagIDs.isEmpty {
+                            ContentUnavailableView(
+                                "No Matching Items",
+                                systemImage: "tag",
+                                description: Text("No items have all the selected tags.")
+                            )
+                        } else {
+                            ContentUnavailableView(
+                                "No Items",
+                                systemImage: "tshirt",
+                                description: Text("No items match the current filter.")
+                            )
+                        }
                     } else {
                         ScrollView {
                             switch viewModel.displayMode {
                             case .grid:
                                 LazyVGrid(columns: gridColumns, spacing: 12) {
                                     ForEach(filtered) { item in
-                                        NavigationLink(value: item.persistentModelID) {
-                                            WardrobeGridCell(item: item)
+                                        if viewModel.isSelecting {
+                                            Button {
+                                                viewModel.toggleItemSelection(item)
+                                            } label: {
+                                                WardrobeGridCell(item: item)
+                                                    .overlay(alignment: .bottomTrailing) {
+                                                        selectionIndicator(for: item)
+                                                    }
+                                            }
+                                            .buttonStyle(.plain)
+                                        } else {
+                                            NavigationLink(value: item.persistentModelID) {
+                                                WardrobeGridCell(item: item)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .onLongPressGesture {
+                                                withAnimation {
+                                                    viewModel.enterSelectionMode(with: item)
+                                                }
+                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
                                 .padding(.horizontal)
@@ -115,10 +148,27 @@ struct WardrobeView: View {
                             case .list:
                                 LazyVStack(spacing: 12) {
                                     ForEach(filtered) { item in
-                                        NavigationLink(value: item.persistentModelID) {
-                                            ClothingItemCard(item: item)
+                                        if viewModel.isSelecting {
+                                            Button {
+                                                viewModel.toggleItemSelection(item)
+                                            } label: {
+                                                ClothingItemCard(item: item)
+                                                    .overlay(alignment: .bottomTrailing) {
+                                                        selectionIndicator(for: item)
+                                                    }
+                                            }
+                                            .buttonStyle(.plain)
+                                        } else {
+                                            NavigationLink(value: item.persistentModelID) {
+                                                ClothingItemCard(item: item)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .onLongPressGesture {
+                                                withAnimation {
+                                                    viewModel.enterSelectionMode(with: item)
+                                                }
+                                            }
                                         }
-                                        .buttonStyle(.plain)
                                     }
                                 }
                                 .padding(.horizontal)
@@ -131,6 +181,24 @@ struct WardrobeView: View {
             .navigationTitle("Wardrobe")
             .searchable(text: $viewModel.searchText)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !allItems.isEmpty {
+                        Button {
+                            withAnimation {
+                                if viewModel.isSelecting {
+                                    viewModel.exitSelectionMode()
+                                } else {
+                                    viewModel.isSelecting = true
+                                }
+                            }
+                        } label: {
+                            Text(viewModel.isSelecting ? "Done" : "Select")
+                                .font(.subheadline)
+                                .foregroundStyle(viewModel.isSelecting ? Theme.champagne : Theme.secondaryText)
+                        }
+                    }
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 16) {
                         WeatherWidgetView(viewModel: weatherViewModel)
@@ -169,8 +237,31 @@ struct WardrobeView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if viewModel.isSelecting && !viewModel.selectedItemIDs.isEmpty {
+                    bulkActionBar
+                }
+            }
             .sheet(isPresented: $isShowingManualAdd) {
                 AddItemView()
+            }
+            .sheet(isPresented: $viewModel.isShowingBulkTagEdit) {
+                BulkTagEditSheet(
+                    scope: .item,
+                    selectedItemIDs: viewModel.selectedItemIDs,
+                    allItems: allItems
+                ) { edits in
+                    viewModel.applyBulkTagEdits(edits: edits, items: allItems, allTags: allTags)
+                    try? modelContext.save()
+                }
+            }
+            .alert("Delete Items?", isPresented: $viewModel.isShowingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    viewModel.deleteSelectedItems(items: allItems, context: modelContext)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Delete \(viewModel.selectedItemIDs.count) item\(viewModel.selectedItemIDs.count == 1 ? "" : "s")? This cannot be undone.")
             }
             .photosPicker(isPresented: $isShowingPhotoPicker, selection: $selectedPhotoItem, matching: .images)
             .fullScreenCover(isPresented: $scanViewModel.showingCamera) {
@@ -203,6 +294,46 @@ struct WardrobeView: View {
                 styleViewModel.modelContext = modelContext
             }
         }
+    }
+
+    // MARK: - Selection Indicator
+
+    private func selectionIndicator(for item: ClothingItem) -> some View {
+        let isSelected = viewModel.selectedItemIDs.contains(item.persistentModelID)
+        return Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isSelected ? Theme.champagne : Theme.secondaryText)
+            .padding(6)
+            .background(.ultraThinMaterial)
+            .clipShape(Circle())
+            .padding(8)
+    }
+
+    // MARK: - Bulk Action Bar
+
+    private var bulkActionBar: some View {
+        HStack(spacing: 12) {
+            Text("\(viewModel.selectedItemIDs.count) selected")
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+
+            Spacer()
+
+            Button("Edit Tags") { viewModel.isShowingBulkTagEdit = true }
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(Theme.champagne)
+
+            Button {
+                viewModel.isShowingDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
     }
 }
 

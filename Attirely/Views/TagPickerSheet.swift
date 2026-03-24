@@ -3,17 +3,22 @@ import SwiftData
 
 struct TagPickerSheet: View {
     @Binding var selectedTags: [Tag]
+    let scope: TagScope
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Tag.name) private var allTags: [Tag]
     @State private var newTagName = ""
     @State private var isAddingTag = false
 
+    private var scopedTags: [Tag] {
+        allTags.filter { $0.scope == scope }
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 Section("Tags") {
-                    ForEach(allTags) { tag in
+                    ForEach(scopedTags) { tag in
                         HStack {
                             TagChipView(tag: tag)
                             Spacer()
@@ -77,14 +82,14 @@ struct TagPickerSheet: View {
         let normalized = Tag.normalized(newTagName)
         guard !normalized.isEmpty else { return }
 
-        if let existing = allTags.first(where: { $0.name == normalized }) {
+        if let existing = scopedTags.first(where: { $0.name == normalized }) {
             var next = selectedTags
             if !next.contains(where: { $0.persistentModelID == existing.persistentModelID }) {
                 next.append(existing)
                 selectedTags = next
             }
         } else {
-            let tag = Tag(name: normalized, isPredefined: false)
+            let tag = Tag(name: normalized, isPredefined: false, scope: scope)
             modelContext.insert(tag)
             var next = selectedTags
             next.append(tag)

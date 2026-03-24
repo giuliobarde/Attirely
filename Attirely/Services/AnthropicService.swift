@@ -68,9 +68,26 @@ struct AnthropicService {
     If no clothing items are detected, return an empty array: []
     """
 
+    private static func buildScanPrompt(availableItemTagNames: [String]) -> String {
+        var prompt = analysisPrompt
+        if !availableItemTagNames.isEmpty {
+            // Insert tags field before the "Return ONLY" line by appending at end of field list
+            let tagSection = """
+
+            - tags: array of 1-3 tag name strings chosen from this exact list that match the item: [\(availableItemTagNames.joined(separator: ", "))]. Pick tags that describe the item's usage, seasonality, or character. Return an empty array if no tags fit.
+            """
+            // Insert before the final instruction
+            prompt = prompt.replacingOccurrences(
+                of: "Return ONLY a valid JSON array",
+                with: tagSection + "\nReturn ONLY a valid JSON array"
+            )
+        }
+        return prompt
+    }
+
     // MARK: - Clothing Analysis
 
-    static func analyzeClothing(image: UIImage) async throws -> [ClothingItemDTO] {
+    static func analyzeClothing(image: UIImage, availableItemTagNames: [String] = []) async throws -> [ClothingItemDTO] {
         let apiKey = try ConfigManager.apiKey()
 
         guard let jpegData = image.jpegData(compressionQuality: 0.6) else {
@@ -78,6 +95,8 @@ struct AnthropicService {
         }
 
         let base64Image = jpegData.base64EncodedString()
+
+        let prompt = buildScanPrompt(availableItemTagNames: availableItemTagNames)
 
         let requestBody: [String: Any] = [
             "model": model,
@@ -96,7 +115,7 @@ struct AnthropicService {
                         ],
                         [
                             "type": "text",
-                            "text": analysisPrompt
+                            "text": prompt
                         ]
                     ]
                 ]

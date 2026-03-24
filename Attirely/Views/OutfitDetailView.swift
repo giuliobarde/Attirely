@@ -204,7 +204,7 @@ struct OutfitDetailView: View {
         .sheet(item: $auxiliarySheet) { sheet in
             switch sheet {
             case .tagPicker:
-                TagPickerSheet(selectedTags: $editTags)
+                TagPickerSheet(selectedTags: $editTags, scope: .outfit)
             case .addItems:
                 OutfitEditItemPicker(currentItems: editItems) { newItems in
                     editItems.append(contentsOf: newItems)

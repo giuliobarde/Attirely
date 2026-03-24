@@ -131,9 +131,10 @@ class OutfitViewModel {
             outfit.items.map { $0.id.uuidString }.sorted()
         }
 
-        // Fetch all tags for AI auto-tagging
+        // Fetch outfit-scoped tags for AI auto-tagging
         let allTags = (try? modelContext.fetch(FetchDescriptor<Tag>())) ?? []
-        let tagNames = allTags.map(\.name)
+        let outfitTags = allTags.filter { $0.scope == .outfit }
+        let tagNames = outfitTags.map(\.name)
 
         Task {
             do {
@@ -157,7 +158,7 @@ class OutfitViewModel {
                     let minRequired = min(3, suggestion.itemIDs.count)
                     guard matchedItems.count >= minRequired else { continue }
 
-                    let resolvedTags = resolveTags(from: suggestion.tags, allTags: allTags)
+                    let resolvedTags = TagManager.resolveTags(from: suggestion.tags, allTags: allTags, scope: .outfit)
                     let outfit = Outfit(
                         name: suggestion.name,
                         occasion: suggestion.occasion,
@@ -198,13 +199,6 @@ class OutfitViewModel {
     func autoPopulateSeason() {
         guard selectedSeason == nil else { return }
         selectedSeason = weatherViewModel?.suggestedSeason
-    }
-
-    // MARK: - Tag Resolution
-
-    private func resolveTags(from names: [String], allTags: [Tag]) -> [Tag] {
-        let tagIndex = Dictionary(uniqueKeysWithValues: allTags.map { ($0.name, $0) })
-        return names.compactMap { tagIndex[Tag.normalized($0)] }
     }
 
     // MARK: - Bulk Selection
@@ -272,39 +266,22 @@ class OutfitViewModel {
         selectedOutfitIDs = []
     }
 
-    // MARK: - Tag CRUD
+    // MARK: - Tag CRUD (delegates to TagManager)
 
-    func createTag(name: String, context: ModelContext) {
-        let normalized = Tag.normalized(name)
-        guard !normalized.isEmpty else { return }
-        let predicate = #Predicate<Tag> { $0.name == normalized }
-        let existing = (try? context.fetchCount(FetchDescriptor(predicate: predicate))) ?? 0
-        guard existing == 0 else { return }
-        let tag = Tag(name: normalized, isPredefined: false)
-        context.insert(tag)
-        try? context.save()
+    func createTag(name: String, scope: TagScope = .outfit, context: ModelContext) {
+        TagManager.createTag(name: name, scope: scope, context: context)
     }
 
     func renameTag(_ tag: Tag, to newName: String, context: ModelContext) {
-        guard !tag.isPredefined else { return }
-        let normalized = Tag.normalized(newName)
-        guard !normalized.isEmpty else { return }
-        let predicate = #Predicate<Tag> { $0.name == normalized }
-        let existing = (try? context.fetchCount(FetchDescriptor(predicate: predicate))) ?? 0
-        guard existing == 0 else { return }
-        tag.name = normalized
-        try? context.save()
+        TagManager.renameTag(tag, to: newName, context: context)
     }
 
     func deleteTag(_ tag: Tag, context: ModelContext) {
-        guard !tag.isPredefined else { return }
-        context.delete(tag)
-        try? context.save()
+        TagManager.deleteTag(tag, context: context)
     }
 
     func updateTagColor(_ tag: Tag, hex: String?, context: ModelContext) {
-        tag.colorHex = hex
-        try? context.save()
+        TagManager.updateTagColor(tag, hex: hex, context: context)
     }
 
     // MARK: - Weather Snapshot

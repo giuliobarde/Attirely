@@ -165,6 +165,8 @@ class AgentViewModel {
         switch call.name {
         case .generateOutfit:
             return await executeGenerateOutfit(GenerateOutfitInput(from: call.inputJSON))
+        case .searchOutfits:
+            return executeSearchOutfits(SearchOutfitsInput(from: call.inputJSON))
         case .searchWardrobe:
             return executeSearchWardrobe(SearchWardrobeInput(from: call.inputJSON))
         case .updateStyleInsight:
@@ -185,9 +187,10 @@ class AgentViewModel {
                 outfit.items.map { $0.id.uuidString }.sorted()
             }
 
-            // Fetch all tags for AI auto-tagging
+            // Fetch outfit-scoped tags for AI auto-tagging
             let allTags = (try? modelContext?.fetch(FetchDescriptor<Tag>())) ?? []
-            let tagNames = allTags.map(\.name)
+            let outfitTags = allTags.filter { $0.scope == .outfit }
+            let tagNames = outfitTags.map(\.name)
 
             let suggestions = try await AnthropicService.generateOutfits(
                 from: wardrobeItems,
@@ -208,7 +211,7 @@ class AgentViewModel {
                 let minRequired = min(3, suggestion.itemIDs.count)
                 guard matchedItems.count >= minRequired else { continue }
 
-                let resolvedTags = resolveTags(from: suggestion.tags, allTags: allTags)
+                let resolvedTags = TagManager.resolveTags(from: suggestion.tags, allTags: allTags, scope: .outfit)
                 let outfit = Outfit(
                     name: suggestion.name,
                     occasion: suggestion.occasion,
@@ -239,9 +242,59 @@ class AgentViewModel {
         }
     }
 
-    private func resolveTags(from names: [String], allTags: [Tag]) -> [Tag] {
-        let tagIndex = Dictionary(uniqueKeysWithValues: allTags.map { ($0.name, $0) })
-        return names.compactMap { tagIndex[Tag.normalized($0)] }
+    private func executeSearchOutfits(_ input: SearchOutfitsInput) -> (String, [Outfit], [ClothingItem], String?) {
+        var matches = allOutfits
+
+        // Filter by tags if provided
+        if !input.tags.isEmpty {
+            let normalizedTags = input.tags.map { Tag.normalized($0) }
+            matches = matches.filter { outfit in
+                normalizedTags.contains { tagName in
+                    outfit.tags.contains { $0.name == tagName }
+                }
+            }
+        }
+
+        // Filter by query text if provided
+        if let query = input.query, !query.isEmpty {
+            let words = query.lowercased().split(separator: " ").map { String($0) }
+            matches = matches.filter { outfit in
+                let searchableText = [
+                    outfit.name ?? "",
+                    outfit.occasion ?? "",
+                    outfit.reasoning ?? "",
+                    outfit.items.map { "\($0.type) \($0.primaryColor) \($0.category)" }.joined(separator: " "),
+                    outfit.tags.map(\.name).joined(separator: " ")
+                ].joined(separator: " ").lowercased()
+
+                return words.allSatisfy { searchableText.contains($0) }
+            }
+        }
+
+        // Sort: favorites first, then by creation date (newest first)
+        matches.sort { a, b in
+            if a.isFavorite != b.isFavorite { return a.isFavorite }
+            return a.createdAt > b.createdAt
+        }
+
+        // Limit to a reasonable number
+        let top = Array(matches.prefix(5))
+
+        if top.isEmpty {
+            return ("No saved outfits found matching this search. I can generate a new outfit for you if you'd like.", [], [], nil)
+        }
+
+        var result = "Found \(matches.count) outfit\(matches.count == 1 ? "" : "s"):\n"
+        for outfit in top {
+            let items = outfit.items.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
+            let tags = outfit.tags.map(\.name).joined(separator: ", ")
+            result += "- \"\(outfit.displayName)\" | Items: \(items)"
+            if !tags.isEmpty { result += " | Tags: \(tags)" }
+            if outfit.isFavorite { result += " ⭐" }
+            result += "\n"
+        }
+
+        return (result, top, [], nil)
     }
 
     private func executeSearchWardrobe(_ input: SearchWardrobeInput) -> (String, [Outfit], [ClothingItem], String?) {
@@ -345,11 +398,16 @@ class AgentViewModel {
 
         GUIDELINES:
         - Be conversational and concise. Keep responses to 1-3 short paragraphs unless the user asks for detail.
-        - When the user asks what to wear or wants outfit suggestions, ALWAYS use the generateOutfit tool — never describe outfits from memory or guess item names.
-        - When the user asks about specific items they own, use the searchWardrobe tool to get accurate results.
-        - When the user explicitly states a style preference or dislike, use updateStyleInsight to record it. Do not announce that you're recording it — just acknowledge naturally.
         - Never invent items the user doesn't own. If you're unsure, search first.
         - Reference items by their type and color (e.g. "your navy blazer") rather than IDs.
+        - When the user explicitly states a style preference or dislike, use updateStyleInsight to record it. Do not announce that you're recording it — just acknowledge naturally.
+
+        INTENT DETECTION — choosing the right tool:
+        - When the user wants something NEW, DIFFERENT, or a SURPRISE ("give me a new outfit", "surprise me", "something I haven't tried", "create an outfit for…"), use the generateOutfit tool.
+        - When the user wants something FAMILIAR, a GO-TO, or PREVIOUSLY WORN ("what do I usually wear", "my go-to work outfit", "something I've worn before", "a classic", "what's my favorite…"), use the searchOutfits tool to find existing saved outfits.
+        - When the user asks about specific ITEMS they own ("do I have any blazers?", "what blue tops do I have?"), use the searchWardrobe tool.
+        - When the phrasing is AMBIGUOUS ("what should I wear today"), default to generateOutfit.
+        - If searchOutfits returns no results, explain that and offer to generate something new instead.
         """
 
         // Weather context
@@ -380,6 +438,14 @@ class AgentViewModel {
         if !categoryCounts.isEmpty {
             prompt += " Categories: \(categoryCounts)."
         }
+
+        // Outfit overview
+        let favoriteCount = allOutfits.filter(\.isFavorite).count
+        prompt += "\n\nOUTFIT OVERVIEW:\n\(allOutfits.count) saved outfits"
+        if favoriteCount > 0 {
+            prompt += " (\(favoriteCount) favorited)"
+        }
+        prompt += "."
 
         // Pending insights from this session
         if !pendingInsights.isEmpty {

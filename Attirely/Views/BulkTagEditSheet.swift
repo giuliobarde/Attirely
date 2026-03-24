@@ -2,8 +2,11 @@ import SwiftUI
 import SwiftData
 
 struct BulkTagEditSheet: View {
-    let selectedOutfitIDs: Set<PersistentIdentifier>
-    let allOutfits: [Outfit]
+    let scope: TagScope
+    var selectedOutfitIDs: Set<PersistentIdentifier> = []
+    var allOutfits: [Outfit] = []
+    var selectedItemIDs: Set<PersistentIdentifier> = []
+    var allItems: [ClothingItem] = []
     let onApply: ([PersistentIdentifier: Bool]) -> Void
 
     @Query(sort: \Tag.name) private var allTags: [Tag]
@@ -15,9 +18,13 @@ struct BulkTagEditSheet: View {
         case checked, unchecked, mixed
     }
 
+    private var scopedTags: [Tag] {
+        allTags.filter { $0.scope == scope }
+    }
+
     var body: some View {
         NavigationStack {
-            List(allTags) { tag in
+            List(scopedTags) { tag in
                 HStack {
                     TagChipView(tag: tag)
                     Spacer()
@@ -72,25 +79,37 @@ struct BulkTagEditSheet: View {
     // MARK: - State Logic
 
     private func computeInitialStates() {
-        let selectedOutfits = allOutfits.filter { selectedOutfitIDs.contains($0.persistentModelID) }
-        let totalSelected = selectedOutfits.count
-
         var computed: [PersistentIdentifier: TagState] = [:]
-        for tag in allTags {
-            let count = selectedOutfits.filter { outfit in
-                outfit.tags.contains { $0.persistentModelID == tag.persistentModelID }
-            }.count
 
-            if count == totalSelected {
-                computed[tag.persistentModelID] = .checked
-            } else if count > 0 {
-                computed[tag.persistentModelID] = .mixed
-            } else {
-                computed[tag.persistentModelID] = .unchecked
+        switch scope {
+        case .outfit:
+            let targets = allOutfits.filter { selectedOutfitIDs.contains($0.persistentModelID) }
+            let total = targets.count
+            for tag in scopedTags {
+                let count = targets.filter { outfit in
+                    outfit.tags.contains { $0.persistentModelID == tag.persistentModelID }
+                }.count
+                computed[tag.persistentModelID] = stateFor(count: count, total: total)
+            }
+        case .item:
+            let targets = allItems.filter { selectedItemIDs.contains($0.persistentModelID) }
+            let total = targets.count
+            for tag in scopedTags {
+                let count = targets.filter { item in
+                    item.tags.contains { $0.persistentModelID == tag.persistentModelID }
+                }.count
+                computed[tag.persistentModelID] = stateFor(count: count, total: total)
             }
         }
+
         tagStates = computed
         initialStates = computed
+    }
+
+    private func stateFor(count: Int, total: Int) -> TagState {
+        if count == total { .checked }
+        else if count > 0 { .mixed }
+        else { .unchecked }
     }
 
     private func cycleState(for tag: Tag) {
@@ -111,7 +130,7 @@ struct BulkTagEditSheet: View {
 
     private func buildEdits() -> [PersistentIdentifier: Bool] {
         var edits: [PersistentIdentifier: Bool] = [:]
-        for tag in allTags {
+        for tag in scopedTags {
             let initial = initialStates[tag.persistentModelID, default: .unchecked]
             let current = tagStates[tag.persistentModelID, default: .unchecked]
             if !statesEqual(initial, current) {
@@ -121,7 +140,7 @@ struct BulkTagEditSheet: View {
                 case .unchecked:
                     edits[tag.persistentModelID] = false
                 case .mixed:
-                    break // unchanged mixed — shouldn't happen but skip
+                    break
                 }
             }
         }

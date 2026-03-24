@@ -37,7 +37,11 @@ class ScanViewModel {
 
         Task {
             do {
-                let items = try await AnthropicService.analyzeClothing(image: image)
+                // Fetch item-scoped tags for AI auto-tagging
+                let allTags = (try? modelContext?.fetch(FetchDescriptor<Tag>())) ?? []
+                let itemTagNames = allTags.filter { $0.scope == .item }.map(\.name)
+
+                let items = try await AnthropicService.analyzeClothing(image: image, availableItemTagNames: itemTagNames)
                 if items.isEmpty {
                     self.errorMessage = "No clothing items detected. Try a clearer photo."
                 } else {
@@ -56,6 +60,13 @@ class ScanViewModel {
         do {
             let scanImagePath = try ImageStorageService.saveScanImage(selectedImage, id: dto.id)
             let clothingItem = ClothingItem(from: dto, sourceImagePath: scanImagePath)
+
+            // Resolve AI-suggested tags
+            if !dto.tags.isEmpty {
+                let allTags = (try? modelContext.fetch(FetchDescriptor<Tag>())) ?? []
+                clothingItem.tags = TagManager.resolveTags(from: dto.tags, allTags: allTags, scope: .item)
+            }
+
             modelContext.insert(clothingItem)
             try modelContext.save()
             savedItemIDs.insert(dto.id)

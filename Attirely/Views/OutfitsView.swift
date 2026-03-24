@@ -17,6 +17,7 @@ struct OutfitsView: View {
             VStack(spacing: 0) {
                 TagFilterBar(
                     selectedTagIDs: $viewModel.selectedTagIDs,
+                    scope: .outfit,
                     outfits: allOutfits
                 )
 
@@ -142,6 +143,7 @@ struct OutfitsView: View {
         }
         .sheet(isPresented: $viewModel.isShowingBulkTagEdit) {
             BulkTagEditSheet(
+                scope: .outfit,
                 selectedOutfitIDs: viewModel.selectedOutfitIDs,
                 allOutfits: allOutfits
             ) { edits in

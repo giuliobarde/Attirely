@@ -24,6 +24,10 @@ struct AddItemView: View {
     @State private var brand = ""
     @State private var notes = ""
 
+    // Tags
+    @State private var selectedTags: [Tag] = []
+    @State private var isShowingTagPicker = false
+
     // Photo
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var selectedImage: UIImage?
@@ -122,6 +126,30 @@ struct AddItemView: View {
                     }
                 }
 
+                // Tags
+                Section("Tags") {
+                    if selectedTags.isEmpty {
+                        Text("No tags")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryText)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(selectedTags) { tag in
+                                    TagChipView(tag: tag)
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        isShowingTagPicker = true
+                    } label: {
+                        Label("Edit Tags", systemImage: "tag")
+                            .foregroundStyle(Theme.champagne)
+                    }
+                }
+
                 // Description & notes
                 Section("Description") {
                     TextField("Description", text: $itemDescription, axis: .vertical)
@@ -146,6 +174,9 @@ struct AddItemView: View {
                     Button("Save") { saveItem() }
                         .disabled(!canSave)
                 }
+            }
+            .sheet(isPresented: $isShowingTagPicker) {
+                TagPickerSheet(selectedTags: $selectedTags, scope: .item)
             }
             .onChange(of: selectedPhoto) {
                 Task {
@@ -184,6 +215,7 @@ struct AddItemView: View {
             }
         }
 
+        item.tags = selectedTags
         modelContext.insert(item)
         try? modelContext.save()
         dismiss()

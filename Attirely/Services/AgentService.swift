@@ -76,6 +76,30 @@ struct AgentService {
             ]
         ],
         [
+            "name": "searchOutfits",
+            "description": """
+                Search the user's saved outfits by name, occasion, or tags. Use this when the \
+                user asks for a familiar outfit, a go-to look, something they've worn before, or \
+                references existing outfits (e.g. 'my usual work outfit', 'what do I normally \
+                wear to the gym', 'find me a formal outfit'). Can filter by tags.
+                """,
+            "input_schema": [
+                "type": "object",
+                "properties": [
+                    "query": [
+                        "type": "string",
+                        "description": "Optional text to match against outfit names, occasions, or item descriptions."
+                    ],
+                    "tags": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Optional tag names to filter by (e.g. 'formal', 'winter')."
+                    ]
+                ],
+                "required": [] as [String]
+            ]
+        ],
+        [
             "name": "searchWardrobe",
             "description": """
                 Search the user's wardrobe for specific items matching a description or criteria. \

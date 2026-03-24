@@ -22,6 +22,15 @@ class WardrobeViewModel {
     var displayMode: WardrobeDisplayMode = .grid
     var searchText: String = ""
 
+    // Tag filtering
+    var selectedTagIDs: Set<PersistentIdentifier> = []
+
+    // Bulk selection
+    var isSelecting = false
+    var selectedItemIDs: Set<PersistentIdentifier> = []
+    var isShowingBulkTagEdit = false
+    var isShowingDeleteConfirmation = false
+
     func filteredItems(from items: [ClothingItem]) -> [ClothingItem] {
         var result = items
 
@@ -38,8 +47,69 @@ class WardrobeViewModel {
             }
         }
 
+        if !selectedTagIDs.isEmpty {
+            result = result.filter { item in
+                selectedTagIDs.allSatisfy { tagID in
+                    item.tags.contains { $0.persistentModelID == tagID }
+                }
+            }
+        }
+
         return result
     }
+
+    // MARK: - Bulk Selection
+
+    func enterSelectionMode(with item: ClothingItem) {
+        isSelecting = true
+        selectedItemIDs = [item.persistentModelID]
+    }
+
+    func toggleItemSelection(_ item: ClothingItem) {
+        if selectedItemIDs.contains(item.persistentModelID) {
+            selectedItemIDs.remove(item.persistentModelID)
+        } else {
+            selectedItemIDs.insert(item.persistentModelID)
+        }
+    }
+
+    func exitSelectionMode() {
+        isSelecting = false
+        selectedItemIDs = []
+    }
+
+    func applyBulkTagEdits(edits: [PersistentIdentifier: Bool], items: [ClothingItem], allTags: [Tag]) {
+        let targets = items.filter { selectedItemIDs.contains($0.persistentModelID) }
+        for (tagID, shouldHave) in edits {
+            guard let tag = allTags.first(where: { $0.persistentModelID == tagID }) else { continue }
+            for item in targets {
+                let has = item.tags.contains { $0.persistentModelID == tagID }
+                if shouldHave && !has {
+                    item.tags.append(tag)
+                } else if !shouldHave && has {
+                    item.tags.removeAll { $0.persistentModelID == tagID }
+                }
+            }
+        }
+        exitSelectionMode()
+    }
+
+    func deleteSelectedItems(items: [ClothingItem], context: ModelContext) {
+        let targets = items.filter { selectedItemIDs.contains($0.persistentModelID) }
+        for item in targets {
+            if let path = item.imagePath {
+                ImageStorageService.deleteImage(relativePath: path)
+            }
+            if let path = item.sourceImagePath {
+                ImageStorageService.deleteImage(relativePath: path)
+            }
+            context.delete(item)
+        }
+        try? context.save()
+        exitSelectionMode()
+    }
+
+    // MARK: - Single Item Delete
 
     func deleteItem(_ item: ClothingItem, context: ModelContext) {
         if let path = item.imagePath {

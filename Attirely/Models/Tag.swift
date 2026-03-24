@@ -2,15 +2,29 @@ import Foundation
 import SwiftUI
 import SwiftData
 
+enum TagScope: String, CaseIterable {
+    case outfit
+    case item
+}
+
 @Model
 final class Tag {
-    @Attribute(.unique) var name: String
+    var name: String
     var isPredefined: Bool
     var colorHex: String?
+    var scopeRaw: String = TagScope.outfit.rawValue
     var createdAt: Date
+
+    var scope: TagScope {
+        get { TagScope(rawValue: scopeRaw) ?? .outfit }
+        set { scopeRaw = newValue.rawValue }
+    }
 
     @Relationship(deleteRule: .nullify, inverse: \Outfit.tags)
     var outfits: [Outfit] = []
+
+    @Relationship(deleteRule: .nullify, inverse: \ClothingItem.tags)
+    var items: [ClothingItem] = []
 
     /// Saved color, semantic default by tag name, or (custom tags only) a stable derived hue.
     var resolvedAccentColor: Color? {
@@ -34,13 +48,15 @@ final class Tag {
         raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    /// Representative accent for built-in tags (season, occasion, Siri).
+    /// Representative accent for built-in tags (season, occasion, Siri, item-specific).
     static func semanticAccentHex(for normalizedName: String) -> String? {
         switch normalizedName {
+        // Seasonal (shared names across scopes)
         case "spring": return "5AAB6B"
         case "summer": return "E8A838"
         case "fall": return "C4703A"
         case "winter": return "5B8FC7"
+        // Outfit occasion
         case "work": return "3D5A80"
         case "casual": return "6B9E9E"
         case "date-night": return "B84D6B"
@@ -49,6 +65,11 @@ final class Tag {
         case "travel": return "5C7CFA"
         case "outdoor": return "4A8C4A"
         case "siri": return "6C5CE7"
+        // Item-specific
+        case "everyday": return "7B9E6B"
+        case "statement": return "D4638F"
+        case "layering": return "8B7EC8"
+        case "seasonal-rotate": return "C48B4A"
         default: return nil
         }
     }
@@ -82,10 +103,11 @@ final class Tag {
         return (byte(rp + m), byte(gp + m), byte(bp + m))
     }
 
-    init(name: String, isPredefined: Bool = false, colorHex: String? = nil) {
+    init(name: String, isPredefined: Bool = false, colorHex: String? = nil, scope: TagScope = .outfit) {
         self.name = Tag.normalized(name)
         self.isPredefined = isPredefined
         self.colorHex = colorHex
+        self.scopeRaw = scope.rawValue
         self.createdAt = Date()
     }
 }

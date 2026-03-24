@@ -37,6 +37,7 @@ final class ClothingItem {
     // Relationships
     var scanSession: ScanSession?
     var outfits: [Outfit] = []
+    var tags: [Tag] = []
 
     init(
         type: String,

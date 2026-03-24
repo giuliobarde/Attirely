@@ -5,6 +5,7 @@ import Foundation
 enum AgentToolName: String {
     case generateOutfit
     case searchWardrobe
+    case searchOutfits
     case updateStyleInsight
 }
 
@@ -45,6 +46,16 @@ struct SearchWardrobeInput {
 
     init(from json: [String: Any]) {
         self.query = (json["query"] as? String) ?? ""
+    }
+}
+
+struct SearchOutfitsInput {
+    let query: String?
+    let tags: [String]
+
+    init(from json: [String: Any]) {
+        self.query = json["query"] as? String
+        self.tags = (json["tags"] as? [String]) ?? []
     }
 }
 
