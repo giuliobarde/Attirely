@@ -1,19 +1,31 @@
 import SwiftUI
 import SwiftData
 
+private enum OutfitDetailAuxiliarySheet: String, Identifiable {
+    case tagPicker
+    case addItems
+
+    var id: String { rawValue }
+}
+
 struct OutfitDetailView: View {
     @Bindable var outfit: Outfit
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirmation = false
-    @State private var isShowingTagPicker = false
+    @State private var auxiliarySheet: OutfitDetailAuxiliarySheet?
 
     // Edit mode
     @State private var isEditing = false
     @State private var editName = ""
     @State private var editOccasion = ""
     @State private var editItems: [ClothingItem] = []
-    @State private var isShowingEditItemPicker = false
+    @State private var editTags: [Tag] = []
+
+    private var tagsForChipRow: [Tag] {
+        let base = isEditing ? editTags : Array(outfit.tags)
+        return base.sorted(by: { $0.name < $1.name })
+    }
 
     var body: some View {
         ScrollView {
@@ -28,25 +40,33 @@ struct OutfitDetailView: View {
                 }
                 .padding(.horizontal)
 
-                // Tags
+                // Tags (add/remove only in edit mode)
                 HStack {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
-                            ForEach(outfit.tags.sorted(by: { $0.name < $1.name })) { tag in
-                                TagChipView(tag: tag) {
-                                    outfit.tags.removeAll { $0.persistentModelID == tag.persistentModelID }
-                                    try? modelContext.save()
+                            ForEach(tagsForChipRow) { tag in
+                                if isEditing {
+                                    TagChipView(tag: tag) {
+                                        editTags.removeAll { $0.persistentModelID == tag.persistentModelID }
+                                    }
+                                } else {
+                                    TagChipView(tag: tag)
                                 }
                             }
                         }
                     }
 
-                    Button {
-                        isShowingTagPicker = true
-                    } label: {
-                        Image(systemName: "tag")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondaryText)
+                    if isEditing {
+                        Button {
+                            auxiliarySheet = .tagPicker
+                        } label: {
+                            Image(systemName: "tag")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(minWidth: 44, minHeight: 36)
+                        .contentShape(Rectangle())
                     }
                 }
                 .padding(.horizontal)
@@ -86,7 +106,7 @@ struct OutfitDetailView: View {
 
                     if isEditing {
                         Button {
-                            isShowingEditItemPicker = true
+                            auxiliarySheet = .addItems
                         } label: {
                             HStack {
                                 Image(systemName: "plus.circle.fill")
@@ -181,12 +201,14 @@ struct OutfitDetailView: View {
                 dismiss()
             }
         }
-        .sheet(isPresented: $isShowingTagPicker) {
-            TagPickerSheet(outfit: outfit)
-        }
-        .sheet(isPresented: $isShowingEditItemPicker) {
-            OutfitEditItemPicker(currentItems: editItems) { newItems in
-                editItems.append(contentsOf: newItems)
+        .sheet(item: $auxiliarySheet) { sheet in
+            switch sheet {
+            case .tagPicker:
+                TagPickerSheet(selectedTags: $editTags)
+            case .addItems:
+                OutfitEditItemPicker(currentItems: editItems) { newItems in
+                    editItems.append(contentsOf: newItems)
+                }
             }
         }
     }
@@ -266,6 +288,7 @@ struct OutfitDetailView: View {
         editName = outfit.name ?? ""
         editOccasion = outfit.occasion ?? ""
         editItems = outfit.items
+        editTags = Array(outfit.tags)
         isEditing = true
     }
 
@@ -277,6 +300,7 @@ struct OutfitDetailView: View {
         outfit.name = editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editName.trimmingCharacters(in: .whitespacesAndNewlines)
         outfit.occasion = editOccasion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editOccasion.trimmingCharacters(in: .whitespacesAndNewlines)
         outfit.items = editItems
+        outfit.tags = editTags
         try? modelContext.save()
         isEditing = false
     }

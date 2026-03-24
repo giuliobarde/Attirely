@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TagPickerSheet: View {
-    @Bindable var outfit: Outfit
+    @Binding var selectedTags: [Tag]
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Tag.name) private var allTags: [Tag]
@@ -14,20 +14,17 @@ struct TagPickerSheet: View {
             List {
                 Section("Tags") {
                     ForEach(allTags) { tag in
-                        Button {
-                            toggleTag(tag)
-                        } label: {
-                            HStack {
-                                TagChipView(tag: tag)
-                                Spacer()
-                                if isTagApplied(tag) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(Theme.champagne)
-                                        .font(.subheadline)
-                                }
+                        HStack {
+                            TagChipView(tag: tag)
+                            Spacer()
+                            if isTagApplied(tag) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Theme.champagne)
+                                    .font(.subheadline)
                             }
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .onTapGesture { toggleTag(tag) }
                     }
                 }
 
@@ -39,7 +36,7 @@ struct TagPickerSheet: View {
                                 .onSubmit { createAndApplyTag() }
                             Button("Add") { createAndApplyTag() }
                                 .foregroundStyle(Theme.champagne)
-                                .disabled(newTagName.trimmingCharacters(in: .whitespaces).isEmpty)
+                                .disabled(newTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     } else {
                         Button {
@@ -63,34 +60,38 @@ struct TagPickerSheet: View {
     }
 
     private func isTagApplied(_ tag: Tag) -> Bool {
-        outfit.tags.contains { $0.persistentModelID == tag.persistentModelID }
+        selectedTags.contains { $0.persistentModelID == tag.persistentModelID }
     }
 
     private func toggleTag(_ tag: Tag) {
-        if isTagApplied(tag) {
-            outfit.tags.removeAll { $0.persistentModelID == tag.persistentModelID }
+        var next = selectedTags
+        if let index = next.firstIndex(where: { $0.persistentModelID == tag.persistentModelID }) {
+            next.remove(at: index)
         } else {
-            outfit.tags.append(tag)
+            next.append(tag)
         }
-        try? modelContext.save()
+        selectedTags = next
     }
 
     private func createAndApplyTag() {
         let normalized = Tag.normalized(newTagName)
         guard !normalized.isEmpty else { return }
 
-        // If tag already exists, just apply it
         if let existing = allTags.first(where: { $0.name == normalized }) {
-            if !isTagApplied(existing) {
-                outfit.tags.append(existing)
+            var next = selectedTags
+            if !next.contains(where: { $0.persistentModelID == existing.persistentModelID }) {
+                next.append(existing)
+                selectedTags = next
             }
         } else {
             let tag = Tag(name: normalized, isPredefined: false)
             modelContext.insert(tag)
-            outfit.tags.append(tag)
+            var next = selectedTags
+            next.append(tag)
+            selectedTags = next
+            try? modelContext.save()
         }
 
-        try? modelContext.save()
         newTagName = ""
         isAddingTag = false
     }

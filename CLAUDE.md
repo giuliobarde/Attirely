@@ -3,6 +3,9 @@
 ## What is Attirely?
 A wardrobe management iOS app. Users scan clothing via camera/photo library, the app identifies items using Claude's vision API, and builds a persistent digital wardrobe. Users can generate outfits manually or with AI assistance.
 
+## IMPORTANT — Maintenance Rule
+After implementing a version milestone, update this `CLAUDE.md` (current state, project structure, roadmap) to reflect the changes. This includes new files, updated descriptions, and roadmap progress. Do NOT skip this step.
+
 ## Tech Stack
 - **Language:** Swift (strict concurrency enabled)
 - **UI:** SwiftUI
@@ -59,7 +62,7 @@ Attirely/
 │   ├── DuplicateWarningBanner.swift
 │   ├── DuplicateReviewSheet.swift
 │   ├── OutfitsView.swift           # Outfit list with favorites filter
-│   ├── OutfitDetailView.swift      # Layer-ordered card stack view
+│   ├── OutfitDetailView.swift      # Layer-ordered card stack view with inline edit mode
 │   ├── OutfitRowCard.swift         # Compact outfit card for list
 │   ├── OutfitGenerationContextSheet.swift  # AI generation context picker
 │   ├── ItemPickerSheet.swift       # Manual outfit item selection
@@ -72,13 +75,15 @@ Attirely/
 │   ├── WardrobeAnalyticsView.swift # Swift Charts wardrobe analytics
 │   ├── TagChipView.swift           # Reusable tag chip component (selected/default states, custom colors)
 │   ├── TagFilterBar.swift          # Horizontal scrolling tag filter in Outfits tab
-│   ├── TagPickerSheet.swift        # Toggle/create tags on a single outfit
-│   └── TagManagementView.swift     # Full tag CRUD screen (Profile → Manage Tags)
+│   ├── TagPickerSheet.swift        # Toggle/create tags via Binding (reusable for outfits + future items)
+│   ├── TagManagementView.swift     # Full tag CRUD screen (Profile → Manage Tags)
+│   ├── BulkTagEditSheet.swift      # Bulk tag editor with mixed-state logic (checked/unchecked/mixed)
+│   └── OutfitEditItemPicker.swift  # Item picker for outfit editing (add items to existing outfit)
 ├── Helpers/
 │   ├── Theme.swift                 # Brand design system: color tokens, ViewModifiers, ButtonStyles
 │   ├── ColorMapping.swift          # Color name → SwiftUI Color
 │   ├── ClothingItemDisplayable.swift  # Protocol for DTO + Model
-│   ├── OutfitLayerOrder.swift      # Category → layer sort order
+│   ├── OutfitLayerOrder.swift      # Category → layer sort order + composition warnings
 │   ├── SeasonHelper.swift          # Season detection from date/weather
 │   ├── TemperatureFormatter.swift  # °C/°F formatting helper
 │   ├── StyleSummaryTemplate.swift  # Deterministic style summary from questionnaire
@@ -220,7 +225,8 @@ Attirely/
 - **Style Agent chat tab**: multi-turn conversation with Claude using tool_use for outfit generation, wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Conversation starters. Designed for future Siri reuse via stateless `AgentService`
 - Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, deduplication, item match validation
 - Outfit display: layer-ordered cards (Outerwear → Full Body → Top → Bottom → Footwear → Accessory), favorites, AI reasoning
-- **Outfit tagging system**: shared `Tag` SwiftData model (many-to-many with `Outfit`). 12 predefined tags (seasonal, occasion, `siri`), custom user tags. AI auto-tagging on outfit generation (both direct and agent). Tag chips on outfit cards and detail view. Tag filter bar in Outfits tab (AND multi-select). Tag picker sheet for editing. Bulk-tag selection mode. Tag management in Profile settings (create/rename/delete custom tags, color picker). `Color(hex:)` and `Color.toHex()` extensions for tag chip colors
+- **Outfit tagging system**: shared `Tag` SwiftData model (many-to-many with `Outfit`). 12 predefined tags (seasonal, occasion, `siri`), custom user tags. AI auto-tagging on outfit generation (both direct and agent). Tag chips on outfit cards and detail view. Tag filter bar in Outfits tab (AND multi-select). Tag picker sheet for editing (uses `@Binding var selectedTags`). Bulk-tag selection mode with long-press entry, unified Edit Tags sheet with mixed-state indicators, bulk delete with confirmation. Tag management in Profile settings (create/rename/delete custom tags, color picker). `Color(hex:)` and `Color.toHex()` extensions for tag chip colors. Improved tag chip contrast (~4.5:1 WCAG)
+- **Outfit editing**: inline edit mode in OutfitDetailView — edit name, occasion, items, and tags. Local `@State` copies with Cancel/Done. Add items via `OutfitEditItemPicker`, remove via inline minus button. Advisory composition warnings via `OutfitLayerOrder.warnings()` (multiple footwear, full-body + top/bottom conflicts). Tags edited via `TagPickerSheet` binding, changes applied only on save
 - Manual item entry form with all attributes and optional photo
 - Weather integration: WeatherKit + Open-Meteo fallback, toolbar indicator, detail sheet with hourly forecast, weather context in AI prompts, weather override toggle
 - Location: CoreLocation for weather, reverse geocoding for display, custom location override with geocoding
@@ -311,11 +317,31 @@ Tag (SwiftData @Model)
 #### Tagging UI
 - Tag chips on outfit cards (compact) and outfit detail view (full, editable)
 - Tag filter bar in Outfits tab — replaces or augments the existing favorites filter; multi-select filtering
-- Tag picker sheet on outfit detail (toggle existing tags, create new inline)
+- Tag picker sheet on outfit detail (toggle existing tags, create new inline) — refactored to `@Binding var selectedTags: [Tag]` for reuse
 - Tag management screen in Settings: view predefined tags, create/rename/delete custom tags, set chip colors
-- Bulk-tag action: select multiple outfits → apply/remove tags
+- Bulk-tag selection: long-press on outfit card enters selection mode (+ toolbar "Select" button); checkmark at bottom-right of cards
+- Unified `BulkTagEditSheet`: shows all tags with checked/unchecked/mixed indicators for multi-outfit selection. Tap cycles mixed → unchecked → checked. Apply saves + exits selection mode
+- Bulk delete selected outfits with confirmation dialog
+- Improved tag chip contrast: `tagBackground` opacity 0.85, adjusted `tagText` for ~4.5:1 WCAG in both modes
+- **Hit-testing rule**: `TagChipView` renders as plain label (not `Button`) when `onTap` is nil. In List rows, always use `.contentShape(Rectangle())` + `.onTapGesture` instead of wrapping `TagChipView` in a `Button` — disabled buttons still swallow taps
+
+#### Outfit Editing
+- Edit mode in `OutfitDetailView`: pencil toolbar button → inline `TextField` for name and occasion, item add/remove, tag editing
+- Local `@State` copies of name, occasion, items, tags — Cancel reverts all, Done saves to SwiftData
+- Item removal via minus button on each `OutfitItemCard`; item addition via `OutfitEditItemPicker` sheet (grid picker, excludes current items, multi-select)
+- Advisory composition warnings via `OutfitLayerOrder.warnings()`: multiple footwear, multiple bottoms, multiple full-body, full-body + top/bottom conflict. Warnings only — never block the user
+- `PickerGridCell` made `internal` (was `private`) for reuse across `ItemPickerSheet` and `OutfitEditItemPicker`
 
 ### v0.8 — Item Tagging & Agent Intent Detection
+
+#### Reusable Patterns from v0.7
+- `TagPickerSheet` already accepts `@Binding var selectedTags: [Tag]` — reuse directly for item tag editing, no refactoring needed
+- `BulkTagEditSheet` mixed-state pattern (checked/unchecked/mixed) reusable for bulk item tagging in Wardrobe tab
+- **Hit-testing rule**: never wrap `TagChipView` inside a `Button` in List rows — use `.contentShape(Rectangle())` + `.onTapGesture` instead
+- `PickerGridCell` is `internal` — reusable across picker contexts
+- `OutfitLayerOrder.warnings()` pattern can inform item-level validation if needed
+
+#### Item Tagging
 - Extend `Tag` model with `items: [ClothingItem]` relationship (many-to-many)
 - Tag chips and filter bar in Wardrobe tab, tag picker on item detail
 - Predefined item tags: `everyday`, `statement`, `layering`, `seasonal-rotate`, or reuse outfit tags where applicable
@@ -370,5 +396,3 @@ Tag (SwiftData @Model)
 - Seasonal wardrobe rotation suggestions
 - Virtual try-on (pose estimation + outfit overlay)
 
-## Maintenance
-- After implementing a version milestone, update this `CLAUDE.md` (current state, project structure, API details, roadmap) and `README.md` to reflect the changes.
