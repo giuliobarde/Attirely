@@ -1,14 +1,28 @@
+import AppIntents
 import SwiftUI
 import SwiftData
 
 @main
 struct AttirelyApp: App {
+    let modelContainer: ModelContainer
+
+    init() {
+        let container: ModelContainer
+        do {
+            container = try ModelContainer(for: ClothingItem.self, ScanSession.self, Outfit.self, UserProfile.self, StyleSummary.self, Tag.self)
+        } catch {
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
+        self.modelContainer = container
+        AppDependencyManager.shared.add(dependency: container)
+    }
+
     var body: some Scene {
         WindowGroup {
             ThemeWrapper()
                 .tint(Theme.champagne)
         }
-        .modelContainer(for: [ClothingItem.self, ScanSession.self, Outfit.self, UserProfile.self, StyleSummary.self, Tag.self])
+        .modelContainer(modelContainer)
     }
 }
 

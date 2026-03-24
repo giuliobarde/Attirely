@@ -18,6 +18,9 @@ final class Outfit {
     var seasonAtCreation: String?
     var monthAtCreation: Int?
 
+    // Siri integration
+    var lastSuggestedBySiriAt: Date?
+
     @Relationship(deleteRule: .nullify, inverse: \ClothingItem.outfits)
     var items: [ClothingItem]
 

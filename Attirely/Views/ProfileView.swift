@@ -236,6 +236,33 @@ struct ProfileView: View {
                         .foregroundStyle(Theme.secondaryText)
                 }
             }
+
+            Divider()
+
+            // Siri
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Siri")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Toggle("AI outfit generation", isOn: Binding(
+                    get: { profile.isSiriAIGenerationEnabled },
+                    set: { profile.isSiriAIGenerationEnabled = $0; profile.updatedAt = Date() }
+                ))
+                .font(.subheadline)
+                .foregroundStyle(Theme.primaryText)
+                .tint(Theme.champagne)
+
+                if profile.isSiriAIGenerationEnabled {
+                    Text("When enabled, Siri may take 5–15 seconds to generate an outfit using AI if no pre-tagged outfits match.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Text("Tag outfits with \"siri\" in the Outfits tab for instant Siri responses.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
         }
         .themeCard()
     }

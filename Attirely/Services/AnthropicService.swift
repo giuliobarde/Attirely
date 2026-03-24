@@ -266,6 +266,7 @@ struct AnthropicService {
     - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal"
     - "item_ids": array of item id strings from the list below (use ONLY the provided IDs, do not invent new ones)
     - "reasoning": one sentence explaining why this combination works, including a styling tip
+    - "spoken_summary": a natural, conversational 1-2 sentence description of the outfit suitable for voice output (e.g., "I'd go with your navy blazer over the white oxford, paired with dark jeans and brown Chelsea boots — polished but relaxed.")
     - "tags": array of 1-3 tag name strings chosen from the available tags list (empty array if no tags list provided)
 
     No markdown, no explanation, no code fences. Just the raw JSON array.

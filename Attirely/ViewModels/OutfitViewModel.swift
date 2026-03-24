@@ -143,7 +143,7 @@ class OutfitViewModel {
                     occasion: selectedOccasion,
                     season: selectedSeason,
                     weatherContext: weatherViewModel?.weatherContextString,
-                    comfortPreferences: comfortPreferencesString(from: userProfile),
+                    comfortPreferences: StyleContextHelper.comfortPreferencesString(from: userProfile),
                     styleSummary: styleSummaryText,
                     existingOutfitItemSets: existingItemSets,
                     availableTagNames: tagNames
@@ -307,45 +307,6 @@ class OutfitViewModel {
     // MARK: - Style Context
 
     func updateStyleContext(from summary: StyleSummary?) {
-        guard let summary, summary.isAIEnriched else {
-            styleSummaryText = summary?.overallIdentity
-            return
-        }
-        var ctx = "Overall: \(summary.overallIdentity)"
-        for mode in summary.styleModesDecoded {
-            ctx += "\n- \(mode.name) (\(mode.formality)): \(mode.description). Colors: \(mode.colorPalette.joined(separator: ", "))"
-        }
-        if let weather = summary.weatherBehavior {
-            ctx += "\nWeather behavior: \(weather)"
-        }
-        styleSummaryText = ctx
-    }
-
-    // MARK: - Comfort Preferences
-
-    func comfortPreferencesString(from profile: UserProfile?) -> String? {
-        guard let profile else { return nil }
-        var lines: [String] = []
-
-        if let cold = profile.coldSensitivityEnum {
-            lines.append("Cold sensitivity: \(cold.rawValue)")
-        }
-        if let heat = profile.heatSensitivityEnum {
-            lines.append("Heat sensitivity: \(heat.rawValue)")
-        }
-        if let notes = profile.bodyTempNotes, !notes.trimmingCharacters(in: .whitespaces).isEmpty {
-            lines.append("Body temp notes: \(notes.trimmingCharacters(in: .whitespaces))")
-        }
-        if let layering = profile.layeringPreferenceEnum {
-            lines.append("Layering preference: \(layering.rawValue)")
-        }
-        if let comfort = profile.comfortVsAppearanceEnum {
-            lines.append("Comfort vs appearance: \(comfort.rawValue)")
-        }
-        if let approach = profile.weatherDressingApproachEnum {
-            lines.append("Weather dressing: \(approach.rawValue)")
-        }
-
-        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+        styleSummaryText = StyleContextHelper.styleContextString(from: summary)
     }
 }

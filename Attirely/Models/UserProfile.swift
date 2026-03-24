@@ -69,6 +69,9 @@ final class UserProfile {
     var comfortVsAppearance: String?
     var weatherDressingApproach: String?
 
+    // Siri integration
+    var isSiriAIGenerationEnabled: Bool = false
+
     var createdAt: Date
     var updatedAt: Date
 
