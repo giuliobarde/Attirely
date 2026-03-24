@@ -4,6 +4,7 @@ struct ResultsView: View {
     let viewModel: ScanViewModel
     @Environment(\.modelContext) private var modelContext
     @State private var duplicateReviewItem: ClothingItemDTO?
+    @State private var editingItem: ClothingItemDTO?
 
     var body: some View {
         ScrollView {
@@ -94,6 +95,14 @@ struct ResultsView: View {
                                         .buttonStyle(.themePrimary)
 
                                         Button {
+                                            editingItem = dto
+                                        } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                                .frame(maxWidth: .infinity)
+                                        }
+                                        .buttonStyle(.themeSecondary)
+
+                                        Button {
                                             viewModel.dismissItem(dto)
                                         } label: {
                                             Label("Dismiss", systemImage: "xmark")
@@ -128,6 +137,11 @@ struct ResultsView: View {
                         viewModel.dismissItem(dto)
                     }
                 )
+            }
+        }
+        .sheet(item: $editingItem) { dto in
+            ScanItemEditSheet(dto: dto) { edited in
+                viewModel.updateScannedItem(edited)
             }
         }
     }

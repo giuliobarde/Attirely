@@ -40,12 +40,6 @@ struct WardrobeView: View {
                     }
                     .padding(.vertical, 8)
 
-                    // Tag filter bar
-                    TagFilterBar(
-                        selectedTagIDs: $viewModel.selectedTagIDs,
-                        scope: .item,
-                        items: allItems
-                    )
                 }
 
                 if allItems.isEmpty {
@@ -203,6 +197,26 @@ struct WardrobeView: View {
                     HStack(spacing: 16) {
                         WeatherWidgetView(viewModel: weatherViewModel)
 
+                        Button {
+                            viewModel.isShowingFilterSheet = true
+                        } label: {
+                            Image(systemName: viewModel.activeFilterCount > 0
+                                  ? "line.3.horizontal.decrease.circle.fill"
+                                  : "line.3.horizontal.decrease.circle")
+                                .foregroundStyle(viewModel.activeFilterCount > 0 ? Theme.champagne : Theme.secondaryText)
+                                .overlay(alignment: .topTrailing) {
+                                    if viewModel.activeFilterCount > 0 {
+                                        Text("\(viewModel.activeFilterCount)")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 16, height: 16)
+                                            .background(Theme.champagne)
+                                            .clipShape(Circle())
+                                            .offset(x: 6, y: -6)
+                                    }
+                                }
+                        }
+
                         Menu {
                             if UIImagePickerController.isSourceTypeAvailable(.camera) {
                                 Button {
@@ -240,6 +254,18 @@ struct WardrobeView: View {
             .safeAreaInset(edge: .bottom) {
                 if viewModel.isSelecting && !viewModel.selectedItemIDs.isEmpty {
                     bulkActionBar
+                }
+            }
+            .sheet(isPresented: $viewModel.isShowingFilterSheet) {
+                WardrobeFilterSheet(
+                    selectedTagIDs: $viewModel.selectedTagIDs,
+                    selectedFormalities: $viewModel.selectedFormalities,
+                    selectedColors: $viewModel.selectedColors,
+                    availableFormalities: viewModel.availableFormalities(from: allItems),
+                    availableColors: viewModel.availableColors(from: allItems),
+                    items: allItems
+                ) {
+                    viewModel.clearAllFilters()
                 }
             }
             .sheet(isPresented: $isShowingManualAdd) {

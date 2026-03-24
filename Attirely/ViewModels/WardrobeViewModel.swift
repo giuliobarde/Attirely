@@ -22,6 +22,10 @@ class WardrobeViewModel {
     var displayMode: WardrobeDisplayMode = .grid
     var searchText: String = ""
 
+    // Attribute filtering
+    var selectedFormalities: Set<String> = []
+    var selectedColors: Set<String> = []
+
     // Tag filtering
     var selectedTagIDs: Set<PersistentIdentifier> = []
 
@@ -30,6 +34,17 @@ class WardrobeViewModel {
     var selectedItemIDs: Set<PersistentIdentifier> = []
     var isShowingBulkTagEdit = false
     var isShowingDeleteConfirmation = false
+    var isShowingFilterSheet = false
+
+    var activeFilterCount: Int {
+        selectedTagIDs.count + selectedFormalities.count + selectedColors.count
+    }
+
+    func clearAllFilters() {
+        selectedTagIDs.removeAll()
+        selectedFormalities.removeAll()
+        selectedColors.removeAll()
+    }
 
     func filteredItems(from items: [ClothingItem]) -> [ClothingItem] {
         var result = items
@@ -55,7 +70,28 @@ class WardrobeViewModel {
             }
         }
 
+        if !selectedFormalities.isEmpty {
+            result = result.filter { selectedFormalities.contains($0.formality) }
+        }
+
+        if !selectedColors.isEmpty {
+            result = result.filter { selectedColors.contains($0.primaryColor) }
+        }
+
         return result
+    }
+
+    // MARK: - Available Filter Options
+
+    private static let formalityDisplayOrder = ["Casual", "Smart Casual", "Business Casual", "Business", "Formal"]
+
+    func availableFormalities(from items: [ClothingItem]) -> [String] {
+        let present = Set(items.map(\.formality))
+        return Self.formalityDisplayOrder.filter { present.contains($0) }
+    }
+
+    func availableColors(from items: [ClothingItem]) -> [String] {
+        Array(Set(items.map(\.primaryColor))).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     // MARK: - Bulk Selection

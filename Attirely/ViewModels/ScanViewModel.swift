@@ -86,6 +86,12 @@ class ScanViewModel {
         dismissedItemIDs.insert(dto.id)
     }
 
+    func updateScannedItem(_ dto: ClothingItemDTO) {
+        if let index = scannedItems.firstIndex(where: { $0.id == dto.id }) {
+            scannedItems[index] = dto
+        }
+    }
+
     func isItemSaved(_ dto: ClothingItemDTO) -> Bool {
         savedItemIDs.contains(dto.id)
     }

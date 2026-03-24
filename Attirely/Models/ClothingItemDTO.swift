@@ -2,19 +2,19 @@ import Foundation
 
 struct ClothingItemDTO: Codable, Identifiable {
     let id: UUID
-    let type: String
-    let category: String
-    let primaryColor: String
-    let secondaryColor: String?
-    let pattern: String
-    let fabricEstimate: String
-    let weight: String
-    let formality: String
-    let season: [String]
-    let fit: String?
-    let statementLevel: String
-    let description: String
-    let tags: [String]
+    var type: String
+    var category: String
+    var primaryColor: String
+    var secondaryColor: String?
+    var pattern: String
+    var fabricEstimate: String
+    var weight: String
+    var formality: String
+    var season: [String]
+    var fit: String?
+    var statementLevel: String
+    var description: String
+    var tags: [String]
 
     enum CodingKeys: String, CodingKey {
         case type, category, pattern, weight, formality, season, fit, description, tags
