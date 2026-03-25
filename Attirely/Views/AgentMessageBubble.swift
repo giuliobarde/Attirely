@@ -5,6 +5,7 @@ struct AgentMessageBubble: View {
     let message: ChatMessage
     let onSaveOutfit: (Outfit) -> Void
     let onItemTap: (ClothingItem) -> Void
+    var itemsForOutfit: ((Outfit) -> [ClothingItem])? = nil
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -47,7 +48,7 @@ struct AgentMessageBubble: View {
             // Outfit cards
             ForEach(message.outfits) { outfit in
                 VStack(alignment: .leading, spacing: 8) {
-                    OutfitRowCard(outfit: outfit) { }
+                    OutfitRowCard(outfit: outfit, itemsOverride: itemsForOutfit?(outfit)) { }
 
                     // Wardrobe gap notes
                     if !outfit.wardrobeGapsDecoded.isEmpty {

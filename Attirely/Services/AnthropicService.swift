@@ -691,6 +691,40 @@ struct AnthropicService {
         return json
     }
 
+    // MARK: - Streaming Agent Request
+
+    static func streamAgentRequest(body: [String: Any], apiKey: String) async throws -> URLSession.AsyncBytes {
+        var streamBody = body
+        streamBody["stream"] = true
+
+        var request = URLRequest(url: apiURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.httpBody = try JSONSerialization.data(withJSONObject: streamBody)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do {
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
+        } catch {
+            throw AnthropicError.networkError(error)
+        }
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+            // Consume the error body for a better error message
+            var errorData = Data()
+            for try await byte in bytes {
+                errorData.append(byte)
+                if errorData.count > 4096 { break }
+            }
+            let responseBody = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw AnthropicError.apiError(httpResponse.statusCode, responseBody)
+        }
+
+        return bytes
+    }
+
     private static func stripCodeFences(_ text: String) -> String {
         var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if result.hasPrefix("```") {

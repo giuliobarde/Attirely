@@ -11,74 +11,32 @@ struct AgentView: View {
     @Bindable var weatherViewModel: WeatherViewModel
     var styleViewModel: StyleViewModel
 
+    @State private var isChatOpen = false
+    @State private var showCloseConfirmation = false
     @State private var selectedItem: ClothingItem?
+    @FocusState private var isInputFocused: Bool
 
     private var activeProfile: UserProfile? { profiles.first }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Weather context chip
                 weatherChip
-
-                // Messages area
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        if viewModel.messages.isEmpty {
-                            emptyState
-                        } else {
-                            LazyVStack(spacing: 14) {
-                                ForEach(viewModel.messages) { message in
-                                    AgentMessageBubble(
-                                        message: message,
-                                        onSaveOutfit: { outfit in
-                                            viewModel.saveOutfit(outfit)
-                                        },
-                                        onItemTap: { item in
-                                            selectedItem = item
-                                        }
-                                    )
-                                    .id(message.id)
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                            .padding(.bottom, 80)
-                        }
-                    }
-                    .onChange(of: viewModel.messages.count) {
-                        if let lastID = viewModel.messages.last?.id {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo(lastID, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
+                starterScreen
             }
             .background(Theme.screenBackground)
             .safeAreaInset(edge: .bottom) {
-                inputBar
+                starterInputBar
             }
             .navigationTitle("Agent")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     WeatherWidgetView(viewModel: weatherViewModel)
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    if !viewModel.messages.isEmpty {
-                        Button("Clear") {
-                            viewModel.clearConversation()
-                        }
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondaryText)
-                    }
-                }
             }
-            .sheet(item: $selectedItem) { item in
-                NavigationStack {
-                    ItemDetailView(item: item)
-                }
-            }
+        }
+        .fullScreenCover(isPresented: $isChatOpen) {
+            chatView
         }
         .onAppear {
             viewModel.modelContext = modelContext
@@ -96,38 +54,9 @@ struct AgentView: View {
         }
     }
 
-    // MARK: - Weather Chip
+    // MARK: - Starter Screen
 
-    @ViewBuilder
-    private var weatherChip: some View {
-        if let snapshot = weatherViewModel.snapshot {
-            let unit = activeProfile?.temperatureUnit ?? .celsius
-            HStack(spacing: 6) {
-                Image(systemName: snapshot.current.conditionSymbol)
-                    .font(.caption2)
-                    .foregroundStyle(Theme.champagne)
-                Text("\(TemperatureFormatter.format(snapshot.current.temperature, unit: unit)) · \(snapshot.current.conditionDescription)")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.secondaryText)
-                if let location = snapshot.locationName {
-                    Text("· \(location)")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.stone)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Theme.cardFill)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Theme.cardBorder, lineWidth: 0.5))
-            .padding(.horizontal)
-            .padding(.bottom, 4)
-        }
-    }
-
-    // MARK: - Empty State
-
-    private var emptyState: some View {
+    private var starterScreen: some View {
         VStack(spacing: 24) {
             Spacer()
 
@@ -159,11 +88,13 @@ struct AgentView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .onTapGesture { isInputFocused = false }
     }
 
     private func starterButton(_ text: String) -> some View {
         Button {
             viewModel.sendStarterMessage(text)
+            isChatOpen = true
         } label: {
             Text(text)
                 .font(.subheadline)
@@ -180,13 +111,139 @@ struct AgentView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Input Bar
+    // MARK: - Starter Input Bar
 
-    private var inputBar: some View {
+    private var starterInputBar: some View {
         HStack(spacing: 10) {
             TextField("Ask about your style...", text: $viewModel.inputText, axis: .vertical)
                 .font(.subheadline)
                 .lineLimit(1...4)
+                .focused($isInputFocused)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Theme.cardFill)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Theme.cardBorder, lineWidth: 0.5)
+                )
+                .onSubmit {
+                    sendFromStarter()
+                }
+
+            Button {
+                sendFromStarter()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(canSend ? Theme.champagne : Theme.stone)
+            }
+            .disabled(!canSend)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+    }
+
+    private func sendFromStarter() {
+        guard canSend else { return }
+        viewModel.sendUserMessage()
+        isChatOpen = true
+    }
+
+    // MARK: - Chat View (Full Screen Cover)
+
+    private var chatView: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                weatherChip
+
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            ForEach(viewModel.messages) { message in
+                                AgentMessageBubble(
+                                    message: message,
+                                    onSaveOutfit: { outfit in
+                                        viewModel.saveOutfit(outfit)
+                                    },
+                                    onItemTap: { item in
+                                        selectedItem = item
+                                    },
+                                    itemsForOutfit: { outfit in
+                                        viewModel.displayItems(for: outfit)
+                                    }
+                                )
+                                .id(message.id)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.top, 8)
+                        .padding(.bottom, 80)
+                        .onTapGesture { isInputFocused = false }
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    .onChange(of: viewModel.messages.count) {
+                        if let lastID = viewModel.messages.last?.id {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo(lastID, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+            }
+            .background(Theme.screenBackground)
+            .safeAreaInset(edge: .bottom) {
+                chatInputBar
+            }
+            .navigationTitle("Agent")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        if viewModel.hasUnsavedOutfits {
+                            showCloseConfirmation = true
+                        } else {
+                            dismissChat()
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    WeatherWidgetView(viewModel: weatherViewModel)
+                }
+            }
+            .confirmationDialog(
+                "Unsaved Outfits",
+                isPresented: $showCloseConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard & Close", role: .destructive) {
+                    dismissChat()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You have unsaved outfit suggestions. Closing will discard them.")
+            }
+            .sheet(item: $selectedItem) { item in
+                NavigationStack {
+                    ItemDetailView(item: item)
+                }
+            }
+        }
+    }
+
+    // MARK: - Chat Input Bar
+
+    private var chatInputBar: some View {
+        HStack(spacing: 10) {
+            TextField("Ask about your style...", text: $viewModel.inputText, axis: .vertical)
+                .font(.subheadline)
+                .lineLimit(1...4)
+                .focused($isInputFocused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Theme.cardFill)
@@ -213,7 +270,44 @@ struct AgentView: View {
         .background(.ultraThinMaterial)
     }
 
+    // MARK: - Weather Chip
+
+    @ViewBuilder
+    private var weatherChip: some View {
+        if let snapshot = weatherViewModel.snapshot {
+            let unit = activeProfile?.temperatureUnit ?? .celsius
+            HStack(spacing: 6) {
+                Image(systemName: snapshot.current.conditionSymbol)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.champagne)
+                Text("\(TemperatureFormatter.format(snapshot.current.temperature, unit: unit)) · \(snapshot.current.conditionDescription)")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.secondaryText)
+                if let location = snapshot.locationName {
+                    Text("· \(location)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.stone)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.cardFill)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Theme.cardBorder, lineWidth: 0.5))
+            .padding(.horizontal)
+            .padding(.bottom, 4)
+        }
+    }
+
+    // MARK: - Helpers
+
     private var canSend: Bool {
         !viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isSending
+    }
+
+    private func dismissChat() {
+        viewModel.cancelCurrentTask()
+        viewModel.clearConversation()
+        isChatOpen = false
     }
 }

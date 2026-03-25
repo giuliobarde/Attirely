@@ -7,6 +7,7 @@ enum AgentToolName: String {
     case searchWardrobe
     case searchOutfits
     case updateStyleInsight
+    case editOutfit
 }
 
 // MARK: - Parsed Tool Call (from Claude response)
@@ -66,6 +67,22 @@ struct UpdateStyleInsightInput {
     init(from json: [String: Any]) {
         self.insight = (json["insight"] as? String) ?? ""
         self.confidence = (json["confidence"] as? String) ?? "medium"
+    }
+}
+
+struct EditOutfitInput {
+    let outfitName: String
+    let removeItems: [String]
+    let addItems: [String]
+    let newName: String?
+    let newOccasion: String?
+
+    init(from json: [String: Any]) {
+        self.outfitName = (json["outfit_name"] as? String) ?? ""
+        self.removeItems = (json["remove_items"] as? [String]) ?? []
+        self.addItems = (json["add_items"] as? [String]) ?? []
+        self.newName = json["new_name"] as? String
+        self.newOccasion = json["new_occasion"] as? String
     }
 }
 

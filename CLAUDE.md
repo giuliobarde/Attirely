@@ -32,14 +32,16 @@ Attirely/
 │   ├── OutfitSuggestionDTO.swift   # Codable struct (AI outfit parsing, + spokenSummary, wardrobeGaps)
 │   ├── StyleAnalysisDTO.swift      # Codable structs (AI style analysis parsing)
 │   ├── ChatMessage.swift           # Ephemeral struct (agent chat messages, no persistence)
-│   ├── AgentToolDTO.swift          # Tool call/result types for agent tool_use (4 tools: generateOutfit, searchOutfits, searchWardrobe, updateStyleInsight)
+│   ├── AgentToolDTO.swift          # Tool call/result types for agent tool_use (5 tools: generateOutfit, searchOutfits, searchWardrobe, updateStyleInsight, editOutfit)
+│   ├── SSETypes.swift              # SSEEvent enum + ContentBlockAccumulator for streaming response parsing
 │   ├── WeatherData.swift           # Ephemeral structs (current + hourly weather)
 │   ├── UserProfile.swift           # SwiftData @Model (user prefs, profile, style questionnaire)
 │   ├── StyleSummary.swift          # SwiftData @Model (template/AI style summary)
 │   └── Tag.swift                   # SwiftData @Model (scoped tagging: separate outfit + item pools via TagScope)
 ├── Services/
-│   ├── AnthropicService.swift      # Claude API calls (scan, duplicates, outfits, style analysis, agent)
-│   ├── AgentService.swift          # Stateless agent conversation service (tool_use, multi-turn)
+│   ├── AnthropicService.swift      # Claude API calls (scan, duplicates, outfits, style analysis, agent + SSE streaming)
+│   ├── AgentService.swift          # Stateless agent conversation service (tool_use, multi-turn, streaming)
+│   ├── SSEStreamParser.swift       # SSE byte stream parser (URLSession.AsyncBytes → AsyncThrowingStream<SSEEvent>)
 │   ├── ConfigManager.swift         # Reads API key from Config.plist
 │   ├── ImageStorageService.swift   # Save/load images on disk
 │   ├── LocationService.swift       # CoreLocation wrapper for user location
@@ -48,7 +50,7 @@ Attirely/
 │   ├── ScanViewModel.swift
 │   ├── WardrobeViewModel.swift
 │   ├── OutfitViewModel.swift       # Outfit creation, generation, favorites
-│   ├── AgentViewModel.swift        # Chat agent conversation state, tool-use loop, context building
+│   ├── AgentViewModel.swift        # Chat agent conversation state, SSE streaming loop, tool-use, outfit editing, context building
 │   ├── WeatherViewModel.swift      # Weather state, location, fetch coordination
 │   ├── ProfileViewModel.swift      # Profile state, analytics, geocoding
 │   └── StyleViewModel.swift        # AI style analysis state, debounce, merge, agent insights
@@ -69,7 +71,7 @@ Attirely/
 │   ├── AddItemView.swift           # Manual wardrobe item entry form + tag selection
 │   ├── WeatherWidgetView.swift     # Compact toolbar weather indicator
 │   ├── WeatherDetailSheet.swift    # Full weather modal with hourly forecast
-│   ├── AgentView.swift             # Chat agent tab (messages, input, starters, weather chip)
+│   ├── AgentView.swift             # Chat agent tab (starter screen + fullScreenCover chat, unsaved outfit warning)
 │   ├── AgentMessageBubble.swift    # Agent message rendering (text, outfit cards, item refs, insights)
 │   ├── ProfileView.swift           # Profile tab (details, prefs, analytics)
 │   ├── WardrobeAnalyticsView.swift # Swift Charts wardrobe analytics
@@ -193,14 +195,16 @@ Attirely/
 - Uses 2048 max tokens
 
 ### Style Agent
-- Multi-turn conversation via `AgentService.sendMessage()` — stateless, one API call per invocation
+- **SSE Streaming**: agent responses stream token-by-token via `AgentService.streamMessage()` → `SSEStreamParser` → `ContentBlockAccumulator`. Text deltas update UI immediately; tool_use blocks accumulate silently until complete. Each tool-use loop iteration is a separate streaming request
+- Non-streaming path (`AgentService.sendMessage()` / `AnthropicService.sendAgentRequest`) preserved for Siri intents
 - Uses `system` top-level key for persistent context injection (weather, comfort preferences, style summary, wardrobe category counts)
-- Claude `tool_use` with four tools: `generateOutfit(occasion?, constraints?)`, `searchOutfits(query?, tags?)`, `searchWardrobe(query)`, `updateStyleInsight(insight, confidence)`
-- **Intent detection**: system prompt classifies user intent — "new/different/surprise" → `generateOutfit`, "familiar/go-to/worn before" → `searchOutfits`, "specific items" → `searchWardrobe`, ambiguous → `generateOutfit`
+- Claude `tool_use` with five tools: `generateOutfit(occasion?, constraints?)`, `searchOutfits(query?, tags?)`, `searchWardrobe(query)`, `updateStyleInsight(insight, confidence)`, `editOutfit(outfit_name, remove_items?, add_items?, new_name?, new_occasion?)`
+- **Intent detection**: system prompt classifies user intent — "new/different/surprise" → `generateOutfit`, "familiar/go-to/worn before" → `searchOutfits`, "specific items" → `searchWardrobe`, "modify/swap/add/remove" → `editOutfit`, ambiguous → `generateOutfit`
+- **Conversational outfit editing** via `editOutfit` tool: fuzzy item matching by type/color description, in-place mutation of ephemeral Outfit objects, composition validation via `OutfitLayerOrder.warnings()`. Edited outfits remain unsaved until user taps "Save Outfit"
 - `searchOutfits` filters saved outfits by tag names and/or query text, sorts favorites first, returns top 5 as inline outfit cards
-- Tool-use loop in `AgentViewModel` (max 5 iterations), not in service — enables future Siri single-turn reuse
+- **Streaming loop** in `AgentViewModel` (max 5 iterations) with `Task` cancellation support. `currentTask` property enables mid-stream cancellation on chat dismiss
 - Full wardrobe items loaded on-demand via tool execution, not in system prompt (token budget). Outfit overview (count + favorites) in system prompt
-- `AnthropicService.sendAgentRequest` returns full JSON dict (handles tool_use + text content blocks)
+- **Chat as fullScreenCover**: Agent tab shows starter screen by default; conversations open as `.fullScreenCover`. Close button (X) warns about unsaved outfits before dismissing. Tab bar hidden during chat (inherent tab-switch protection)
 - Outfits generated in chat are ephemeral until user taps "Save Outfit" → SwiftData insert + weather snapshot
 - **Agent auto-tagging**: `executeGenerateOutfit` fetches outfit-scoped tags, passes `availableTagNames` to `AnthropicService`, resolves returned tag names to `Tag` objects via `TagManager.resolveTags`
 - Style insights appended to `StyleSummary.gapObservations` via `StyleViewModel.appendAgentInsight`
@@ -235,15 +239,16 @@ Attirely/
 - **No nested closures for async work.** Use `async/await`.
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
-## Current State (v0.9.1)
+## Current State (v0.9.2)
 - Camera and photo library scanning with Claude vision API for clothing detection, **AI auto-tagging on scan**
 - SwiftData persistence for clothing items, scan sessions, outfits, user profile, style summary, and tags
 - Images stored on disk (Documents/clothing-images/, Documents/scan-images/, Documents/profile-images/)
 - Wardrobe view with grid/list toggle, category filtering, **item tag filter bar (AND multi-select)**, **bulk selection mode** (long-press entry, Edit Tags / Delete), and item detail/edit with AI originals as reference
 - Duplicate detection: pre-filter by category+color, Claude-based comparison, user confirmation
 - Tab-based navigation: Agent, Wardrobe, Outfits, Profile (Scan merged into Wardrobe — toolbar menu + empty state onboarding)
-- **Style Agent chat tab**: multi-turn conversation with Claude using tool_use for outfit generation, **outfit search (intent detection)**, wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Conversation starters. Designed for future Siri reuse via stateless `AgentService`
-- **Agent intent detection**: system prompt classifies "new/surprise" → generateOutfit, "familiar/go-to" → searchOutfits, "specific items" → searchWardrobe. `searchOutfits` tool filters saved outfits by tags/query, returns as inline cards
+- **Style Agent chat tab**: starter screen with conversation starters + fullScreenCover chat. **SSE streaming** for token-by-token text display during multi-turn tool_use conversations. Five tools: outfit generation, **outfit editing**, outfit search (intent detection), wardrobe search, and style insight capture. Ephemeral sessions (in-memory only). Inline outfit cards with save action. Weather context chip. Unsaved outfit warning on chat dismiss. Designed for future Siri reuse via stateless `AgentService` (non-streaming path preserved)
+- **Conversational outfit editing**: `editOutfit` tool allows users to say "swap the shoes for boots" or "remove the jacket" — fuzzy item matching by type/color, in-place outfit mutation, composition validation warnings
+- **Agent intent detection**: system prompt classifies "new/surprise" → generateOutfit, "familiar/go-to" → searchOutfits, "specific items" → searchWardrobe, "modify/swap/add/remove" → editOutfit. `searchOutfits` tool filters saved outfits by tags/query, returns as inline cards
 - **Occasion-based outfit filtering** (`OccasionFilter.swift`): hybrid client-side pre-filtering + enhanced AI prompt. `OccasionTier` enum (10 tiers from Casual to White Tie + Gym/Outdoor). Progressive relaxation when filters empty a required category. Wardrobe gap notes with investment suggestions. Style weight scaling by occasion (HIGH casual → LOW formal). Dress code instructions and priority hierarchies per tier. Used by OutfitViewModel, AgentViewModel, and SiriOutfitService
 - Outfit generation: manual creation via item picker, AI-powered with occasion/season/weather context, **occasion-based item filtering**, deduplication, item match validation, **wardrobe gap notes**
 - Outfit display: layer-ordered cards (Outerwear → Full Body → Top → Bottom → Footwear → Accessory), favorites, AI reasoning
@@ -432,6 +437,35 @@ Tag (SwiftData @Model)
 - `OutfitViewModel.selectedOccasionTier: OccasionTier?` replaces `selectedOccasion: String?`
 - `AgentService` tool description updated with expanded occasion list
 - `OutfitOccasion` AppEnum (Siri): added `cocktail` and `blackTie` cases with `occasionTier` computed property
+
+### v0.9.2 — Agent Streaming, Outfit Editing, Chat Dismissal ✅
+
+#### SSE Streaming
+- Token-by-token text streaming via Anthropic SSE API (`"stream": true`)
+- `SSEStreamParser` parses `URLSession.AsyncBytes` into typed `SSEEvent` values via `AsyncThrowingStream`
+- `ContentBlockAccumulator` reconstructs full response (text parts + tool calls + raw assistant content) from streamed events
+- `AgentService.streamMessage()` wraps streaming transport (stateless); existing `sendMessage()` preserved for Siri
+- `AnthropicService.streamAgentRequest()` handles `URLSession.bytes(for:)` + HTTP error extraction from byte stream
+- `AgentViewModel.runConversationLoop` rewritten: streams text deltas → immediate UI update, accumulates tool_use blocks silently, executes tools between streaming turns
+- `appendTextToStreamingMessage()` hides dots on first token, appends subsequent tokens
+- `Task` cancellation support: `currentTask` property on ViewModel, `cancelCurrentTask()` for mid-stream abort
+
+#### Conversational Outfit Editing
+- New `editOutfit` tool (5th agent tool): `outfit_name`, `remove_items?`, `add_items?`, `new_name?`, `new_occasion?`
+- `EditOutfitInput` struct in `AgentToolDTO.swift` for typed parsing
+- Fuzzy item matching via `matchItem(description:in:)` — word overlap scoring against type/color/category/fabric
+- `resolveOutfit(named:)` finds target outfit from conversation messages (fuzzy name match, fallback to most recent unsaved)
+- In-place `Outfit` mutation (reference type) with forced `ChatMessage` array reassignment to trigger `@Observable` re-render
+- Composition validation via `OutfitLayerOrder.warnings()` included in tool result text
+- System prompt INTENT DETECTION updated: "modify/swap/add/remove" → `editOutfit`
+
+#### Chat as Dismissible Full-Screen Cover
+- Agent tab shows starter screen by default (weather chip, title, description, starter buttons, input bar)
+- Starting a conversation (starter button or input bar) opens `.fullScreenCover` with chat UI
+- Close button (X) in chat toolbar — warns about unsaved outfits via `.confirmationDialog` before dismissing
+- `hasUnsavedOutfits` computed property: checks `outfit.modelContext == nil` across all conversation outfits
+- `dismissChat()` cancels in-flight streaming, clears conversation, dismisses cover
+- Tab bar hidden while chat is open (inherent fullScreenCover behavior) — provides tab-switch protection
 
 ### v0.10 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images

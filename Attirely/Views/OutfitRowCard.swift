@@ -2,7 +2,12 @@ import SwiftUI
 
 struct OutfitRowCard: View {
     let outfit: Outfit
+    var itemsOverride: [ClothingItem]? = nil
     let onFavoriteToggle: () -> Void
+
+    private var displayItems: [ClothingItem] {
+        itemsOverride ?? outfit.items
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -37,7 +42,7 @@ struct OutfitRowCard: View {
                         .themePill()
                 }
 
-                Text("\(outfit.items.count) item\(outfit.items.count == 1 ? "" : "s")")
+                Text("\(displayItems.count) item\(displayItems.count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
             }
@@ -60,7 +65,7 @@ struct OutfitRowCard: View {
 
             // Thumbnail strip (up to 4 items in layer order)
             HStack(spacing: 6) {
-                ForEach(Array(OutfitLayerOrder.sorted(outfit.items).prefix(4))) { item in
+                ForEach(Array(OutfitLayerOrder.sorted(displayItems).prefix(4))) { item in
                     if let path = item.sourceImagePath,
                        let image = ImageStorageService.loadImage(relativePath: path) {
                         Image(uiImage: image)
@@ -80,8 +85,8 @@ struct OutfitRowCard: View {
                     }
                 }
 
-                if outfit.items.count > 4 {
-                    Text("+\(outfit.items.count - 4)")
+                if displayItems.count > 4 {
+                    Text("+\(displayItems.count - 4)")
                         .font(.caption)
                         .foregroundStyle(Theme.secondaryText)
                         .frame(width: 48, height: 48)

@@ -28,9 +28,32 @@ class AgentViewModel {
     private var wardrobeItems: [ClothingItem] = []
     private var allOutfits: [Outfit] = []
 
+    // MARK: - Task Management
+
+    private(set) var currentTask: Task<Void, Never>?
+
+    var hasUnsavedOutfits: Bool {
+        !pendingOutfitItems.isEmpty
+    }
+
+    func cancelCurrentTask() {
+        currentTask?.cancel()
+        currentTask = nil
+        isSending = false
+    }
+
     // MARK: - Pending Insights
 
     private var pendingInsights: [(insight: String, confidence: String)] = []
+
+    // MARK: - Pending Outfit Data (deferred until save to avoid SwiftData auto-persistence)
+
+    private var pendingOutfitItems: [UUID: [ClothingItem]] = [:]
+    private var pendingOutfitTags: [UUID: [Tag]] = [:]
+
+    func displayItems(for outfit: Outfit) -> [ClothingItem] {
+        pendingOutfitItems[outfit.id] ?? outfit.items
+    }
 
     // MARK: - Refresh
 
@@ -62,7 +85,7 @@ class AgentViewModel {
         let streamingID = UUID()
         messages.append(ChatMessage(id: streamingID, role: .assistant, isStreaming: true))
 
-        Task {
+        currentTask = Task {
             await runConversationLoop(streamingID: streamingID)
         }
     }
@@ -72,7 +95,7 @@ class AgentViewModel {
         sendUserMessage()
     }
 
-    // MARK: - Conversation Loop
+    // MARK: - Conversation Loop (Streaming)
 
     private func runConversationLoop(streamingID: UUID) async {
         let apiKey: String
@@ -91,20 +114,44 @@ class AgentViewModel {
             let maxLoops = 5
 
             while loopCount < maxLoops {
+                guard !Task.isCancelled else { break }
                 loopCount += 1
 
-                let turn = try await AgentService.sendMessage(
+                // Stream one API turn
+                var accumulator = ContentBlockAccumulator()
+                let eventStream = try await AgentService.streamMessage(
                     history: history,
                     systemPrompt: systemPrompt,
                     tools: AgentService.toolDefinitions,
                     apiKey: apiKey
                 )
 
-                // Append assistant content to history
-                history.append(["role": "assistant", "content": turn.rawAssistantContent])
+                for try await event in eventStream {
+                    if Task.isCancelled { break }
 
-                if turn.stopReason == "end_turn" || turn.toolCalls.isEmpty {
-                    finalizeMessage(streamingID: streamingID, text: turn.assistantText)
+                    accumulator.apply(event)
+
+                    switch event {
+                    case .textDelta(_, let text):
+                        appendTextToStreamingMessage(streamingID: streamingID, delta: text)
+                    case .messageStop:
+                        break
+                    default:
+                        break
+                    }
+                }
+
+                guard !Task.isCancelled else { break }
+
+                // Append reconstructed assistant content to history
+                let assistantContent = accumulator.rawAssistantContent()
+                history.append(["role": "assistant", "content": assistantContent])
+
+                let stopReason = accumulator.stopReason ?? "end_turn"
+                let toolCalls = accumulator.finishedToolCalls()
+
+                if stopReason == "end_turn" || toolCalls.isEmpty {
+                    finalizeStreamingMessage(streamingID: streamingID)
                     break
                 }
 
@@ -114,7 +161,7 @@ class AgentViewModel {
                 var foundItems: [ClothingItem] = []
                 var insightNote: String?
 
-                for call in turn.toolCalls {
+                for call in toolCalls {
                     let (resultContent, toolOutfits, toolItems, toolInsight) = await executeTool(call)
                     toolResultBlocks.append([
                         "type": "tool_result",
@@ -129,11 +176,11 @@ class AgentViewModel {
                 // Append tool results as user message in history
                 history.append(["role": "user", "content": toolResultBlocks])
 
-                // Update streaming message with intermediate results
+                // Update streaming message with intermediate tool results
                 if !outfits.isEmpty || !foundItems.isEmpty || insightNote != nil {
                     updateStreamingMessage(
                         streamingID: streamingID,
-                        text: turn.assistantText,
+                        text: nil,
                         outfits: outfits,
                         wardrobeItems: foundItems,
                         insightNote: insightNote
@@ -141,8 +188,10 @@ class AgentViewModel {
                 }
             }
         } catch {
-            let errorText = "Something went wrong: \(error.localizedDescription)"
-            finalizeMessage(streamingID: streamingID, text: errorText)
+            if !Task.isCancelled {
+                let errorText = "Something went wrong: \(error.localizedDescription)"
+                finalizeMessage(streamingID: streamingID, text: errorText)
+            }
         }
 
         isSending = false
@@ -160,6 +209,8 @@ class AgentViewModel {
             return executeSearchWardrobe(SearchWardrobeInput(from: call.inputJSON))
         case .updateStyleInsight:
             return executeUpdateStyleInsight(UpdateStyleInsightInput(from: call.inputJSON))
+        case .editOutfit:
+            return executeEditOutfit(EditOutfitInput(from: call.inputJSON))
         }
     }
 
@@ -213,9 +264,11 @@ class AgentViewModel {
                     occasion: suggestion.occasion,
                     reasoning: suggestion.reasoning,
                     isAIGenerated: true,
-                    items: matchedItems,
-                    tags: resolvedTags
+                    items: [],
+                    tags: []
                 )
+                pendingOutfitItems[outfit.id] = matchedItems
+                pendingOutfitTags[outfit.id] = resolvedTags
 
                 // Merge client-side + AI wardrobe gap notes
                 let mergedGaps = OccasionFilter.mergeGaps(clientSide: filterResult.wardrobeGaps, aiSide: suggestion.wardrobeGaps)
@@ -229,7 +282,8 @@ class AgentViewModel {
             }
 
             let outfit = createdOutfits[0]
-            let itemSummary = outfit.items.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
+            let matchedItems = pendingOutfitItems[outfit.id] ?? []
+            let itemSummary = matchedItems.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
             let resultText = """
             Generated outfit: "\(outfit.displayName)"
             Occasion: \(outfit.occasion ?? "General")
@@ -332,7 +386,112 @@ class AgentViewModel {
         return ("Insight recorded.", [], [], input.insight)
     }
 
+    private func executeEditOutfit(_ input: EditOutfitInput) -> (String, [Outfit], [ClothingItem], String?) {
+        guard let outfit = resolveOutfit(named: input.outfitName) else {
+            return ("Could not find an outfit matching '\(input.outfitName)' in this conversation.", [], [], nil)
+        }
+
+        var currentItems = pendingOutfitItems[outfit.id] ?? outfit.items
+        var removedDescriptions: [String] = []
+        var addedDescriptions: [String] = []
+
+        // Apply removals
+        for desc in input.removeItems {
+            if let match = matchItem(description: desc, in: currentItems) {
+                currentItems.removeAll { $0.id == match.id }
+                removedDescriptions.append("\(match.type) (\(match.primaryColor))")
+            }
+        }
+
+        // Apply additions
+        let availableToAdd = wardrobeItems.filter { candidate in
+            !currentItems.contains { $0.id == candidate.id }
+        }
+        for desc in input.addItems {
+            if let match = matchItem(description: desc, in: availableToAdd) {
+                currentItems.append(match)
+                addedDescriptions.append("\(match.type) (\(match.primaryColor))")
+            }
+        }
+
+        // Apply metadata
+        if let newName = input.newName, !newName.isEmpty {
+            outfit.name = newName
+        }
+        if let newOccasion = input.newOccasion, !newOccasion.isEmpty {
+            outfit.occasion = newOccasion
+        }
+
+        // Store updated items in pending (don't assign to outfit.items to avoid auto-save)
+        pendingOutfitItems[outfit.id] = currentItems
+
+        // Validate composition
+        let warnings = OutfitLayerOrder.warnings(for: currentItems)
+
+        // Force UI refresh on the message containing this outfit
+        if let msgIndex = messages.firstIndex(where: { $0.outfits.contains(where: { $0.id == outfit.id }) }) {
+            messages[msgIndex].outfits = messages[msgIndex].outfits
+        }
+
+        // Build result summary
+        var summary = "Updated outfit \"\(outfit.displayName)\"."
+        if !removedDescriptions.isEmpty {
+            summary += " Removed: \(removedDescriptions.joined(separator: ", "))."
+        }
+        if !addedDescriptions.isEmpty {
+            summary += " Added: \(addedDescriptions.joined(separator: ", "))."
+        }
+        let itemList = currentItems.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
+        summary += " Current items (\(currentItems.count)): \(itemList)."
+        if !warnings.isEmpty {
+            summary += " Warnings: \(warnings.joined(separator: "; "))."
+        }
+
+        return (summary, [], [], nil)
+    }
+
+    private func resolveOutfit(named name: String) -> Outfit? {
+        let allConversationOutfits = messages.flatMap(\.outfits).reversed()
+        if !name.isEmpty {
+            let lowered = name.lowercased()
+            if let match = allConversationOutfits.first(where: {
+                $0.displayName.lowercased().contains(lowered) ||
+                ($0.occasion?.lowercased().contains(lowered) ?? false)
+            }) {
+                return match
+            }
+        }
+        // Fallback: most recent unsaved outfit, or just the most recent
+        return allConversationOutfits.first { pendingOutfitItems[$0.id] != nil }
+            ?? allConversationOutfits.first
+    }
+
+    private func matchItem(description: String, in items: [ClothingItem]) -> ClothingItem? {
+        let words = description.lowercased().split(separator: " ").map(String.init)
+        let scored = items.map { item in
+            let fields = "\(item.type) \(item.primaryColor) \(item.category) \(item.fabricEstimate)".lowercased()
+            let score = words.filter { fields.contains($0) }.count
+            return (item, score)
+        }
+        return scored.filter { $0.1 > 0 }.max(by: { $0.1 < $1.1 })?.0
+    }
+
     // MARK: - Message Management
+
+    private func appendTextToStreamingMessage(streamingID: UUID, delta: String) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        if messages[index].text == nil {
+            messages[index].text = delta
+            messages[index].isStreaming = false // hide dots once first token arrives
+        } else {
+            messages[index].text?.append(delta)
+        }
+    }
+
+    private func finalizeStreamingMessage(streamingID: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        messages[index].isStreaming = false
+    }
 
     private func finalizeMessage(streamingID: UUID, text: String?) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
@@ -358,6 +517,12 @@ class AgentViewModel {
 
     func saveOutfit(_ outfit: Outfit) {
         guard let modelContext else { return }
+        if let items = pendingOutfitItems.removeValue(forKey: outfit.id) {
+            outfit.items = items
+        }
+        if let tags = pendingOutfitTags.removeValue(forKey: outfit.id) {
+            outfit.tags = tags
+        }
         captureWeatherSnapshot(on: outfit)
         modelContext.insert(outfit)
         try? modelContext.save()
@@ -386,6 +551,8 @@ class AgentViewModel {
         messages = []
         history = []
         pendingInsights = []
+        pendingOutfitItems = [:]
+        pendingOutfitTags = [:]
         errorMessage = nil
     }
 
@@ -407,6 +574,7 @@ class AgentViewModel {
         - When the user wants something NEW, DIFFERENT, or a SURPRISE ("give me a new outfit", "surprise me", "something I haven't tried", "create an outfit for…"), use the generateOutfit tool.
         - When the user wants something FAMILIAR, a GO-TO, or PREVIOUSLY WORN ("what do I usually wear", "my go-to work outfit", "something I've worn before", "a classic", "what's my favorite…"), use the searchOutfits tool to find existing saved outfits.
         - When the user asks about specific ITEMS they own ("do I have any blazers?", "what blue tops do I have?"), use the searchWardrobe tool.
+        - When the user wants to MODIFY an outfit from this conversation ("swap the shoes", "add a jacket", "remove the tie", "make it more casual", "rename it"), use the editOutfit tool.
         - When the phrasing is AMBIGUOUS ("what should I wear today"), default to generateOutfit.
         - If searchOutfits returns no results, explain that and offer to generate something new instead.
         """

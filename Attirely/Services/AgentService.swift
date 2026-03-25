@@ -49,6 +49,26 @@ struct AgentService {
         )
     }
 
+    // MARK: - Stream Message (SSE)
+
+    static func streamMessage(
+        history: [[String: Any]],
+        systemPrompt: String,
+        tools: [[String: Any]],
+        apiKey: String
+    ) async throws -> AsyncThrowingStream<SSEEvent, Error> {
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": maxTokens,
+            "system": systemPrompt,
+            "tools": tools,
+            "messages": history
+        ]
+
+        let bytes = try await AnthropicService.streamAgentRequest(body: body, apiKey: apiKey)
+        return SSEStreamParser.parse(bytes: bytes)
+    }
+
     // MARK: - Tool Definitions
 
     static let toolDefinitions: [[String: Any]] = [
@@ -139,6 +159,43 @@ struct AgentService {
                     ]
                 ],
                 "required": ["insight", "confidence"]
+            ]
+        ],
+        [
+            "name": "editOutfit",
+            "description": """
+                Edit an outfit from this conversation. Use this when the user asks to swap, \
+                replace, add, or remove items in an outfit, rename it, or change its occasion. \
+                Reference items by their type and color (e.g. 'the sneakers', 'navy blazer'). \
+                Use the most recently shown outfit if the user doesn't specify which one.
+                """,
+            "input_schema": [
+                "type": "object",
+                "properties": [
+                    "outfit_name": [
+                        "type": "string",
+                        "description": "Name or description of the outfit to edit. Use the most recently shown outfit if ambiguous."
+                    ],
+                    "remove_items": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Item descriptions to remove (e.g. 'the sneakers', 'white t-shirt'). Matched by type and color."
+                    ],
+                    "add_items": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Wardrobe item descriptions to add (e.g. 'Chelsea boots', 'blue blazer'). Matched against the user's wardrobe by type and color."
+                    ],
+                    "new_name": [
+                        "type": "string",
+                        "description": "Optional new name for the outfit."
+                    ],
+                    "new_occasion": [
+                        "type": "string",
+                        "description": "Optional new occasion for the outfit."
+                    ]
+                ],
+                "required": ["outfit_name"]
             ]
         ]
     ]
