@@ -8,13 +8,16 @@ globs:
 
 ## Gotchas
 - `ClothingItem` uses `itemDescription` (not `description`) to avoid NSObject conflict
+- `ClothingItem.formalityFloor: String?` — optional tier lock (e.g., "Black Tie"); AI-detected on scan, user-editable. `nil` = no restriction
 - `Outfit.displayName` computed property falls back: `name` → `occasion` → formatted date
 - `Tag.scopeRaw` stores `TagScope` enum (.outfit, .item) as String; uniqueness by name+scope enforced in code via `TagManager`, not a DB constraint
 - `Outfit.wardrobeGaps: String?` is JSON-encoded `[String]`; use `wardrobeGapsDecoded` computed property
+- `StyleSummary.behavioralNotes: String?` is JSON-encoded `[AgentObservation]`; use `behavioralNotesDecoded` computed property. `activeObservations` filters for active + non-stale
 
 ## DTO Conventions
 - DTOs own their `CodingKeys` for snake_case API ↔ camelCase Swift mapping
 - `ClothingItemDTO.tags: [String]` and `OutfitSuggestionDTO.tags: [String]` use resilient decoders (default to empty array on failure)
+- `ClothingItemDTO.formalityFloor: String?` — AI-detected formality floor, decoded with `decodeIfPresent`
 - `OutfitSuggestionDTO.wardrobeGaps: [String]` — resilient decoder
 - `StyleAnalysisDTO.styleModes` defaults to empty array if null
 - `OutfitSuggestionDTO.spokenSummary: String?` — conversational voice description for Siri
@@ -22,5 +25,6 @@ globs:
 ## Structural Rules
 - No business logic, no API calls, no UI code in model files
 - `ChatMessage` is ephemeral in-memory struct (no SwiftData) for agent conversation
-- `AgentToolDTO.swift` contains `ToolUseBlock`, `AgentTurn`, and typed tool input structs (5 tools)
+- `AgentToolDTO.swift` contains `ToolUseBlock`, `AgentTurn`, and typed tool input structs (5 tools). `UpdateStyleInsightInput` has optional `category` and `signal` fields
+- `AgentObservation.swift` contains `AgentObservation` Codable struct + `ObservationCategory` and `ObservationSignal` enums — not a SwiftData model, stored as JSON on `StyleSummary`
 - `SSETypes.swift` contains `SSEEvent` enum + `ContentBlockAccumulator` for streaming

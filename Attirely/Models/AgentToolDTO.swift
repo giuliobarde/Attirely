@@ -63,10 +63,14 @@ struct SearchOutfitsInput {
 struct UpdateStyleInsightInput {
     let insight: String
     let confidence: String
+    let category: String?
+    let signal: String?
 
     init(from json: [String: Any]) {
         self.insight = (json["insight"] as? String) ?? ""
         self.confidence = (json["confidence"] as? String) ?? "medium"
+        self.category = json["category"] as? String
+        self.signal = json["signal"] as? String
     }
 }
 

@@ -99,10 +99,11 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 - **v0.9** — Siri & HomePod integration via in-app App Intents, template spoken summaries
 - **v0.9.1** — Occasion-based outfit filtering with OccasionTier, wardrobe gap notes
 - **v0.9.2** — SSE streaming, conversational outfit editing, chat as fullScreenCover
+- **v0.10** — Style intelligence: agent behavioral notes, item formality floor, relevance scoring, tier-based filtering
 
 ## Roadmap
 
-### v0.10 — Image Extraction & Confidence
+### v0.11 — Image Extraction & Confidence
 - Crop/extract individual items from group photos into per-item images
 - Background removal via Apple Vision framework (`VNGenerateForegroundInstanceMaskRequest`)
 - Attribute confidence system: Claude returns per-attribute confidence (`observed`/`inferred`/`assumed`), stored in `attributeConfidence: String?` on `ClothingItem`
@@ -110,7 +111,7 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 - Re-scan merge workflow: user adds better photo, system re-runs and merges (user edits preserved, AI fields updated)
 - New field: `cutoutImagePath: String?` on `ClothingItem`
 
-### v0.11 — Visual Outfit Compositor
+### v0.12 — Visual Outfit Compositor
 - Replace card-based outfit layout with layered visual composition (items stacked as worn on a body)
 - Two sub-problems: isolation (clean cutouts) and normalization (consistent perspective/scale/lighting across different source photos)
 - Planned approach: generative AI to transform source photos into standardized flat-lay product images, then composite via category-based anchor points and z-ordering

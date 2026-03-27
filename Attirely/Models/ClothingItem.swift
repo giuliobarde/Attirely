@@ -34,6 +34,9 @@ final class ClothingItem {
     // Original AI values stored as JSON for reference when editing
     var aiOriginalValues: String?
 
+    // Formality floor: item only appears in outfits at or above this tier (nil = no restriction)
+    var formalityFloor: String?
+
     // Relationships
     var scanSession: ScanSession?
     var outfits: [Outfit] = []
@@ -81,6 +84,7 @@ final class ClothingItem {
         self.statementLevel = dto.statementLevel
         self.itemDescription = dto.description
         self.sourceImagePath = sourceImagePath
+        self.formalityFloor = dto.formalityFloor
         self.createdAt = Date()
         self.updatedAt = Date()
         self.aiOriginalValues = Self.encodeOriginalValues(dto)
@@ -106,7 +110,8 @@ final class ClothingItem {
             "formality": dto.formality,
             "fit": dto.fit as Any,
             "statementLevel": dto.statementLevel,
-            "itemDescription": dto.description
+            "itemDescription": dto.description,
+            "formalityFloor": dto.formalityFloor as Any
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: dict) else { return nil }
         return String(data: data, encoding: .utf8)

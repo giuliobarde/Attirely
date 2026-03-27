@@ -140,22 +140,34 @@ struct AgentService {
         [
             "name": "updateStyleInsight",
             "description": """
-                Capture a durable style preference signal expressed by the user in this \
-                conversation. Use this ONLY when the user explicitly states a preference, \
-                dislike, or self-knowledge about their style — not for inferred observations. \
-                Examples: 'I hate wearing suits', 'I prefer oversized fits', 'navy is my go-to color'.
+                Record a style observation about the user. Use this when: \
+                (1) The user EXPLICITLY states a preference or dislike (high confidence), \
+                (2) The user's outfit edit reveals a behavioral pattern — e.g. they keep removing \
+                sneakers from business outfits (medium confidence), \
+                (3) You notice a recurring pattern across the conversation (low confidence). \
+                Both positive preferences and negative aversions should be recorded.
                 """,
             "input_schema": [
                 "type": "object",
                 "properties": [
                     "insight": [
                         "type": "string",
-                        "description": "The preference signal to record, written as a concise statement. E.g. 'Prefers oversized fits over slim cuts.'"
+                        "description": "Concise statement of the observation. E.g. 'Avoids brown shoes for formal occasions.'"
                     ],
                     "confidence": [
                         "type": "string",
-                        "description": "How explicitly the user stated this preference.",
+                        "description": "How explicitly the user communicated this.",
                         "enum": ["high", "medium", "low"]
+                    ],
+                    "category": [
+                        "type": "string",
+                        "description": "The observation category.",
+                        "enum": ["formalityPreference", "colorAversion", "colorPreference", "fabricPreference", "fabricAversion", "occasionBehavior", "itemPreference", "itemAversion", "generalStyle"]
+                    ],
+                    "signal": [
+                        "type": "string",
+                        "description": "Whether this is a positive preference or a negative aversion.",
+                        "enum": ["positive", "negative"]
                     ]
                 ],
                 "required": ["insight", "confidence"]

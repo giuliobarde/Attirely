@@ -62,6 +62,7 @@ struct AnthropicService {
     - fit: one of "Slim", "Regular", "Relaxed", "Oversized", "Cropped", or null if not determinable
     - statement_level: one of "Low", "Medium", "High" — how much visual attention the piece draws
     - description: a brief one-sentence description of the item, noting any distinguishing features (graphics, logos, unique details, texture, visible wear, etc.)
+    - formality_floor: one of "Black Tie", "Formal", "Cocktail", "Business", or null. Set this ONLY for items inherently tied to a specific formality level that would be inappropriate below it (tuxedo jacket → "Black Tie", evening gown → "Formal", French-cuff dress shirt → "Business"). Most items should be null.
 
     Return ONLY a valid JSON array of objects. No markdown, no explanation, no code fences. Just the raw JSON array.
 
@@ -281,7 +282,9 @@ struct AnthropicService {
         styleSummary: String? = nil,
         filterContext: OccasionFilterContext? = nil,
         existingOutfitItemSets: [[String]] = [],
-        availableTagNames: [String] = []
+        availableTagNames: [String] = [],
+        observationContext: String? = nil,
+        itemRelevanceHints: [UUID: Double]? = nil
     ) async throws -> [OutfitSuggestionDTO] {
         guard items.count >= 2 else {
             throw AnthropicError.insufficientWardrobe
@@ -313,6 +316,11 @@ struct AnthropicService {
             }
         }
 
+        if let observationContext {
+            contextSection += "USER BEHAVIORAL PATTERNS:\n\(observationContext)\n"
+            contextSection += "Respect these patterns unless they conflict with dress code requirements.\n\n"
+        }
+
         if let season { contextSection += "Current season: \(season)\n" }
         if let weatherContext { contextSection += "Current weather:\n\(weatherContext)\n" }
 
@@ -334,7 +342,11 @@ struct AnthropicService {
                 itemList += "/\(secondary)"
             }
             itemList += " | \(item.pattern) | \(item.fabricEstimate) | \(item.formality) | seasons:\(item.season.joined(separator: ","))"
-            itemList += " | \(item.itemDescription)\n"
+            itemList += " | \(item.itemDescription)"
+            if let score = itemRelevanceHints?[item.id], score > 0.7 {
+                itemList += " | [STRONG MATCH]"
+            }
+            itemList += "\n"
         }
 
         // Dedup section — existing outfit item-ID sets

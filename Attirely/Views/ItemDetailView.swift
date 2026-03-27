@@ -42,6 +42,16 @@ struct ItemDetailView: View {
                 editableField("Formality", value: $item.formality, field: "formality")
                 editableField("Statement Level", value: $item.statementLevel, field: "statementLevel")
                 optionalField("Fit", value: $item.fit, field: "fit")
+                Picker("Formality Floor", selection: Binding(
+                    get: { item.formalityFloor ?? "None" },
+                    set: { item.formalityFloor = $0 == "None" ? nil : $0 }
+                )) {
+                    Text("None").tag("None")
+                    Text("Business").tag("Business")
+                    Text("Cocktail").tag("Cocktail")
+                    Text("Formal").tag("Formal")
+                    Text("Black Tie").tag("Black Tie")
+                }
             }
 
             // Season

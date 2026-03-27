@@ -11,6 +11,8 @@ final class StyleSummary {
     var gapObservations: String?
     var weatherBehavior: String?
 
+    var behavioralNotes: String?          // JSON-encoded [AgentObservation]
+
     var lastAnalyzedAt: Date
     var itemCountAtLastAnalysis: Int
     var outfitCountAtLastAnalysis: Int
@@ -32,6 +34,25 @@ final class StyleSummary {
         set {
             styleModes = String(data: (try? JSONEncoder().encode(newValue)) ?? Data(), encoding: .utf8) ?? "[]"
         }
+    }
+
+    var behavioralNotesDecoded: [AgentObservation] {
+        get {
+            guard let data = behavioralNotes?.data(using: .utf8),
+                  let array = try? JSONDecoder().decode([AgentObservation].self, from: data)
+            else { return [] }
+            return array
+        }
+        set {
+            behavioralNotes = String(data: (try? JSONEncoder().encode(newValue)) ?? Data(), encoding: .utf8) ?? "[]"
+        }
+    }
+
+    /// Active, non-stale observations sorted by most recent.
+    var activeObservations: [AgentObservation] {
+        behavioralNotesDecoded
+            .filter { $0.isActive && !$0.isStale }
+            .sorted { $0.lastSeen > $1.lastSeen }
     }
 
     init(

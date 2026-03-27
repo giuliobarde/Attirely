@@ -239,12 +239,25 @@ enum SiriOutfitService {
         // Apply occasion-based filtering
         let tier = occasion.flatMap { OccasionTier(fromString: $0) }
         let filterResult = OccasionFilter.filterItems(wardrobeItems, for: tier)
-        let filteredItems = filterResult.items
         let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
 
-        guard filteredItems.count >= 2 else {
+        guard filterResult.items.count >= 2 else {
             throw SiriOutfitError.noWardrobeItems
         }
+
+        // Score and select candidate items
+        let observations = styleSummary?.activeObservations ?? []
+        let scorerConfig = RelevanceScorerConfig(
+            occasion: tier,
+            season: season,
+            currentTemp: snapshot?.current.temperature,
+            observations: observations,
+            allOutfits: allOutfits
+        )
+        let scoredItems = RelevanceScorer.selectCandidates(from: filterResult.items, config: scorerConfig)
+        let candidateItems = scoredItems.map(\.item)
+        let relevanceHints = Dictionary(uniqueKeysWithValues: scoredItems.map { ($0.item.id, $0.score) })
+        let observationPrompt = ObservationManager.promptString(from: observations, forOccasion: tier)
 
         let weatherContext = snapshot.map { StyleContextHelper.weatherContextString(from: $0) }
         let comfortPrefs = StyleContextHelper.comfortPreferencesString(from: profile)
@@ -258,7 +271,7 @@ enum SiriOutfitService {
         let tagNames = outfitTags.map(\.name)
 
         let suggestions = try await AnthropicService.generateOutfits(
-            from: filteredItems,
+            from: candidateItems,
             occasion: occasion,
             season: season,
             weatherContext: weatherContext,
@@ -266,14 +279,16 @@ enum SiriOutfitService {
             styleSummary: styleText,
             filterContext: filterContext,
             existingOutfitItemSets: Array(existingItemSets),
-            availableTagNames: tagNames
+            availableTagNames: tagNames,
+            observationContext: observationPrompt,
+            itemRelevanceHints: relevanceHints
         )
 
         guard let suggestion = suggestions.first else {
             throw SiriOutfitError.generationFailed("Try again in a moment.")
         }
 
-        let matchedItems = filteredItems.filter {
+        let matchedItems = candidateItems.filter {
             suggestion.itemIDs.contains($0.id.uuidString)
         }
         let minRequired = min(3, suggestion.itemIDs.count)

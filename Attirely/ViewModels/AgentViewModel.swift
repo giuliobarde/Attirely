@@ -22,6 +22,7 @@ class AgentViewModel {
     var userProfile: UserProfile?
     var styleSummaryText: String?
     var styleViewModel: StyleViewModel?
+    var styleSummary: StyleSummary?
 
     // MARK: - Wardrobe Snapshot
 
@@ -64,6 +65,7 @@ class AgentViewModel {
 
     func updateStyleContext(from summary: StyleSummary?) {
         styleSummaryText = StyleContextHelper.styleContextString(from: summary)
+        styleSummary = summary
     }
 
     // MARK: - Send Message
@@ -226,8 +228,23 @@ class AgentViewModel {
             // Map free-form occasion string to OccasionTier and filter items
             let tier = input.occasion.flatMap { OccasionTier(fromString: $0) }
             let filterResult = OccasionFilter.filterItems(wardrobeItems, for: tier)
-            let filteredItems = filterResult.items
             let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
+
+            // Score and select candidate items for token efficiency
+            let observations = styleSummary?.activeObservations ?? []
+            let scorerConfig = RelevanceScorerConfig(
+                occasion: tier,
+                season: weatherViewModel?.suggestedSeason,
+                currentTemp: weatherViewModel?.snapshot?.current.temperature,
+                observations: observations,
+                allOutfits: allOutfits
+            )
+            let scoredItems = RelevanceScorer.selectCandidates(from: filterResult.items, config: scorerConfig)
+            let candidateItems = scoredItems.map(\.item)
+            let relevanceHints = Dictionary(uniqueKeysWithValues: scoredItems.map { ($0.item.id, $0.score) })
+
+            // Build observation context for prompt injection
+            let observationPrompt = ObservationManager.promptString(from: observations, forOccasion: tier)
 
             let existingItemSets = allOutfits.map { outfit in
                 outfit.items.map { $0.id.uuidString }.sorted()
@@ -239,7 +256,7 @@ class AgentViewModel {
             let tagNames = outfitTags.map(\.name)
 
             let suggestions = try await AnthropicService.generateOutfits(
-                from: filteredItems,
+                from: candidateItems,
                 occasion: input.occasion,
                 season: weatherViewModel?.suggestedSeason,
                 weatherContext: weatherViewModel?.weatherContextString,
@@ -247,12 +264,14 @@ class AgentViewModel {
                 styleSummary: styleSummaryText,
                 filterContext: filterContext,
                 existingOutfitItemSets: existingItemSets,
-                availableTagNames: tagNames
+                availableTagNames: tagNames,
+                observationContext: observationPrompt,
+                itemRelevanceHints: relevanceHints
             )
 
             var createdOutfits: [Outfit] = []
             for suggestion in suggestions {
-                let matchedItems = filteredItems.filter {
+                let matchedItems = candidateItems.filter {
                     suggestion.itemIDs.contains($0.id.uuidString)
                 }
                 let minRequired = min(3, suggestion.itemIDs.count)
@@ -382,7 +401,35 @@ class AgentViewModel {
 
     private func executeUpdateStyleInsight(_ input: UpdateStyleInsightInput) -> (String, [Outfit], [ClothingItem], String?) {
         pendingInsights.append((insight: input.insight, confidence: input.confidence))
-        styleViewModel?.appendAgentInsight(input.insight)
+
+        // Record as structured observation
+        let threshold: Int
+        switch input.confidence {
+        case "high": threshold = 1
+        case "medium": threshold = 2
+        default: threshold = 3
+        }
+
+        let (category, signal) = ObservationManager.classifyInsight(
+            input.insight,
+            category: input.category,
+            signal: input.signal
+        )
+
+        if let summary = styleSummary {
+            var observations = summary.behavioralNotesDecoded
+            observations = ObservationManager.recordObservation(
+                pattern: input.insight,
+                category: category,
+                signal: signal,
+                threshold: threshold,
+                occasionContext: nil,
+                in: observations
+            )
+            summary.behavioralNotesDecoded = observations
+            try? modelContext?.save()
+        }
+
         return ("Insight recorded.", [], [], input.insight)
     }
 
@@ -400,6 +447,24 @@ class AgentViewModel {
             if let match = matchItem(description: desc, in: currentItems) {
                 currentItems.removeAll { $0.id == match.id }
                 removedDescriptions.append("\(match.type) (\(match.primaryColor))")
+
+                // Record negative signal for the removed item
+                if let inferredSignal = ObservationManager.inferNegativeSignal(
+                    removedItem: match,
+                    occasionContext: outfit.occasion
+                ), let summary = styleSummary {
+                    var observations = summary.behavioralNotesDecoded
+                    observations = ObservationManager.recordObservation(
+                        pattern: inferredSignal.pattern,
+                        category: inferredSignal.category,
+                        signal: .negative,
+                        threshold: 3,
+                        occasionContext: outfit.occasion,
+                        in: observations
+                    )
+                    summary.behavioralNotesDecoded = observations
+                    try? modelContext?.save()
+                }
             }
         }
 
@@ -569,12 +634,15 @@ class AgentViewModel {
         - Never invent items the user doesn't own. If you're unsure, search first.
         - Reference items by their type and color (e.g. "your navy blazer") rather than IDs.
         - When the user explicitly states a style preference or dislike, use updateStyleInsight to record it. Do not announce that you're recording it — just acknowledge naturally.
+        - When the user removes items from outfits, expresses dislike, or rejects suggestions, use updateStyleInsight to record the behavioral pattern as a negative signal. Include the category and signal fields when you can determine them.
+        - If you notice recurring patterns in the user's choices across the conversation (e.g., they always pick dark colors, avoid certain fabrics), record these as low-confidence insights.
 
         INTENT DETECTION — choosing the right tool:
         - When the user wants something NEW, DIFFERENT, or a SURPRISE ("give me a new outfit", "surprise me", "something I haven't tried", "create an outfit for…"), use the generateOutfit tool.
         - When the user wants something FAMILIAR, a GO-TO, or PREVIOUSLY WORN ("what do I usually wear", "my go-to work outfit", "something I've worn before", "a classic", "what's my favorite…"), use the searchOutfits tool to find existing saved outfits.
         - When the user asks about specific ITEMS they own ("do I have any blazers?", "what blue tops do I have?"), use the searchWardrobe tool.
         - When the user wants to MODIFY an outfit from this conversation ("swap the shoes", "add a jacket", "remove the tie", "make it more casual", "rename it"), use the editOutfit tool.
+        - When the user states a preference/dislike OR you observe a behavioral pattern from their edits/rejections, use updateStyleInsight. Include category and signal when you can determine them.
         - When the phrasing is AMBIGUOUS ("what should I wear today"), default to generateOutfit.
         - If searchOutfits returns no results, explain that and offer to generate something new instead.
         """
@@ -622,6 +690,13 @@ class AgentViewModel {
             for insight in pendingInsights {
                 prompt += "\n- \(insight.insight)"
             }
+        }
+
+        // Behavioral observations (persistent across conversations)
+        if let observations = styleSummary?.activeObservations,
+           let observationPrompt = ObservationManager.promptString(from: observations) {
+            prompt += "\n\nUSER BEHAVIORAL PATTERNS (learned from past conversations):\n\(observationPrompt)"
+            prompt += "\nUse these observations to inform your suggestions. If the user contradicts a pattern, that's fine — update your understanding."
         }
 
         return prompt

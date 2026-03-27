@@ -129,11 +129,29 @@ class OutfitViewModel {
 
         // Apply occasion-based filtering
         let filterResult = OccasionFilter.filterItems(allItems, for: selectedOccasionTier)
-        let filteredItems = filterResult.items
         let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
 
-        // Collect existing outfit item-ID sets for dedup
+        // Score and select candidate items for token efficiency
+        let summaryDescriptor = FetchDescriptor<StyleSummary>()
+        let summary = (try? modelContext.fetch(summaryDescriptor))?.first
+        let observations = summary?.activeObservations ?? []
+
         let existingOutfits = (try? modelContext.fetch(FetchDescriptor<Outfit>())) ?? []
+
+        let scorerConfig = RelevanceScorerConfig(
+            occasion: selectedOccasionTier,
+            season: selectedSeason,
+            currentTemp: weatherViewModel?.snapshot?.current.temperature,
+            observations: observations,
+            allOutfits: existingOutfits
+        )
+        let scoredItems = RelevanceScorer.selectCandidates(from: filterResult.items, config: scorerConfig)
+        let candidateItems = scoredItems.map(\.item)
+        let relevanceHints = Dictionary(uniqueKeysWithValues: scoredItems.map { ($0.item.id, $0.score) })
+
+        let observationPrompt = ObservationManager.promptString(from: observations, forOccasion: selectedOccasionTier)
+
+        // Collect existing outfit item-ID sets for dedup
         let existingItemSets = existingOutfits.map { outfit in
             outfit.items.map { $0.id.uuidString }.sorted()
         }
@@ -146,7 +164,7 @@ class OutfitViewModel {
         Task {
             do {
                 let suggestions = try await AnthropicService.generateOutfits(
-                    from: filteredItems,
+                    from: candidateItems,
                     occasion: selectedOccasion,
                     season: selectedSeason,
                     weatherContext: weatherViewModel?.weatherContextString,
@@ -154,12 +172,14 @@ class OutfitViewModel {
                     styleSummary: styleSummaryText,
                     filterContext: filterContext,
                     existingOutfitItemSets: existingItemSets,
-                    availableTagNames: tagNames
+                    availableTagNames: tagNames,
+                    observationContext: observationPrompt,
+                    itemRelevanceHints: relevanceHints
                 )
 
                 var created: [Outfit] = []
                 for suggestion in suggestions {
-                    let matchedItems = filteredItems.filter {
+                    let matchedItems = candidateItems.filter {
                         suggestion.itemIDs.contains($0.id.uuidString)
                     }
                     // Require at least 3 matched items, or all suggested if fewer than 3

@@ -106,6 +106,7 @@ class StyleViewModel {
                 }
 
                 try? context.save()
+                self.graduateObservations()
             } catch {
                 self.errorMessage = error.localizedDescription
             }
@@ -113,16 +114,29 @@ class StyleViewModel {
         }
     }
 
-    // MARK: - Agent Insight
+    // MARK: - Observation Graduation
 
-    func appendAgentInsight(_ insight: String) {
+    /// Auto-resolve low-impact observations that are well-reinforced, prune stale ones.
+    func graduateObservations() {
         guard let context = modelContext,
               let summary = (try? context.fetch(FetchDescriptor<StyleSummary>()))?.first
         else { return }
 
-        let existing = summary.gapObservations ?? ""
-        let separator = existing.isEmpty ? "" : "\n"
-        summary.gapObservations = existing + separator + "User preference: " + insight
+        var observations = summary.behavioralNotesDecoded
+        guard !observations.isEmpty else { return }
+
+        // Auto-graduate well-reinforced low-impact observations
+        for i in observations.indices {
+            let obs = observations[i]
+            if obs.isActive && !obs.isResolved
+                && obs.occurrenceCount >= obs.threshold * 2
+                && obs.category.isLowImpact {
+                observations[i].isResolved = true
+            }
+        }
+
+        observations = ObservationManager.prune(observations)
+        summary.behavioralNotesDecoded = observations
         try? context.save()
     }
 }

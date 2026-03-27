@@ -6,6 +6,16 @@ enum StyleWeight: String {
     case high, medium, low
 }
 
+// MARK: - Filtering Mode
+
+enum FilteringMode {
+    case none       // casual/smart casual: no exclusions, AI + style profile handle it
+    case light      // business tiers: exclude only egregiously wrong items
+    case moderate   // cocktail/formal: exclude clearly casual items
+    case strict     // black/white tie: hard dress code filtering
+    case inverted   // gym: only include matching items
+}
+
 // MARK: - Dress Code Strictness
 
 enum DressCodeStrictness {
@@ -61,6 +71,23 @@ enum OccasionTier: String, CaseIterable, Identifiable {
 
     var isActivityBased: Bool {
         self == .gymAthletic || self == .outdoorActive
+    }
+
+    // MARK: - Filtering Mode
+
+    var filteringMode: FilteringMode {
+        switch self {
+        case .casual, .smartCasual:
+            .none
+        case .businessCasual, .business, .outdoorActive:
+            .light
+        case .cocktail, .formal:
+            .moderate
+        case .blackTie, .whiteTie:
+            .strict
+        case .gymAthletic:
+            .inverted
+        }
     }
 
     // MARK: - Filtering Rules
@@ -276,7 +303,7 @@ enum OccasionFilter {
 
     private static let requiredCategories: Set<String> = ["Top", "Bottom", "Footwear"]
 
-    /// Filters wardrobe items based on occasion appropriateness with progressive relaxation.
+    /// Filters wardrobe items based on occasion appropriateness with tier-based filtering gradient.
     static func filterItems(_ items: [ClothingItem], for occasion: OccasionTier?) -> OccasionFilterResult {
         guard let occasion else {
             return OccasionFilterResult(items: items, occasion: nil, relaxedCategories: [:], isFullyRelaxed: false, wardrobeGaps: [])
@@ -287,8 +314,30 @@ enum OccasionFilter {
             return OccasionFilterResult(items: items, occasion: occasion, relaxedCategories: [:], isFullyRelaxed: true, wardrobeGaps: [])
         }
 
-        // Phase 1: Apply hard filters
-        var filtered = items.filter { isItemAllowed($0, for: occasion) }
+        // Phase 1: Apply tier-appropriate filtering
+        var filtered: [ClothingItem]
+        switch occasion.filteringMode {
+        case .none:
+            // Casual / Smart Casual: only enforce formality floor (e.g., tux excluded from casual)
+            filtered = items.filter { passesFormalityFloor($0, for: occasion) }
+            return OccasionFilterResult(items: filtered, occasion: occasion, relaxedCategories: [:], isFullyRelaxed: false, wardrobeGaps: [])
+
+        case .light:
+            // Business tiers / Outdoor: exclude only egregiously wrong items
+            filtered = items.filter { isItemAllowedLight($0, for: occasion) }
+
+        case .moderate:
+            // Cocktail / Formal: exclude clearly casual items
+            filtered = items.filter { isItemAllowedModerate($0, for: occasion) }
+
+        case .strict:
+            // Black Tie / White Tie: hard dress code filtering
+            filtered = items.filter { isItemAllowedStrict($0, for: occasion) }
+
+        case .inverted:
+            // Gym: only include matching items
+            filtered = items.filter { isItemIncludedForActivity($0, keywords: occasion.includedTypeKeywords ?? [], occasion: occasion) }
+        }
 
         // Phase 2: Progressive relaxation per required category
         var relaxedCategories: [String: RelaxationReason] = [:]
@@ -300,11 +349,9 @@ enum OccasionFilter {
             let filteredCount = filteredByCategory[category]?.count ?? 0
 
             if filteredCount == 0 && originalCount > 0 {
-                // Relax: add back all original items for this category
                 let restoredItems = originalByCategory[category] ?? []
                 filtered.append(contentsOf: restoredItems)
 
-                // Determine reason
                 let reason = determineRelaxationReason(
                     originalItems: restoredItems,
                     occasion: occasion
@@ -325,19 +372,47 @@ enum OccasionFilter {
         return OccasionFilterResult(items: filtered, occasion: occasion, relaxedCategories: relaxedCategories, isFullyRelaxed: false, wardrobeGaps: gaps)
     }
 
-    // MARK: - Item Filtering
+    // MARK: - Formality Floor
 
-    private static func isItemAllowed(_ item: ClothingItem, for occasion: OccasionTier) -> Bool {
-        // Activity-based tiers use inverted logic
-        if let includedKeywords = occasion.includedTypeKeywords {
-            return isItemIncludedForActivity(item, keywords: includedKeywords, occasion: occasion)
-        }
+    /// Universal hard constraint: items with a formality floor can only appear at or above that tier.
+    private static func passesFormalityFloor(_ item: ClothingItem, for occasion: OccasionTier) -> Bool {
+        guard let floor = item.formalityFloor,
+              let floorTier = OccasionTier(fromString: floor)
+        else { return true }
+        return occasion.formalityLevel >= floorTier.formalityLevel
+    }
 
-        // Standard filtering: formality + type keywords + fabric
+    // MARK: - Tier-Based Filtering
+
+    private static let lightExcludedTypeKeywords = [
+        "flip flop", "croc", "gym short", "sports bra", "running shoe", "tank top"
+    ]
+
+    private static let moderateExcludedTypeKeywords = [
+        "flip flop", "croc", "sneaker", "running shoe", "sweatpant", "jogger",
+        "hoodie", "tank top", "crop top", "gym", "athletic"
+    ]
+
+    /// Light filtering: exclude only egregiously wrong items + formality floor.
+    private static func isItemAllowedLight(_ item: ClothingItem, for occasion: OccasionTier) -> Bool {
+        guard passesFormalityFloor(item, for: occasion) else { return false }
+        return !isTypeExcluded(item.type, keywords: lightExcludedTypeKeywords)
+    }
+
+    /// Moderate filtering: exclude clearly casual items + certain fabrics + formality floor.
+    private static func isItemAllowedModerate(_ item: ClothingItem, for occasion: OccasionTier) -> Bool {
+        guard passesFormalityFloor(item, for: occasion) else { return false }
+        let typeAllowed = !isTypeExcluded(item.type, keywords: moderateExcludedTypeKeywords)
+        let fabricAllowed = !occasion.excludedFabrics.contains(item.fabricEstimate)
+        return typeAllowed && fabricAllowed
+    }
+
+    /// Strict filtering: formality + type keywords + fabric + formality floor (Black/White Tie).
+    private static func isItemAllowedStrict(_ item: ClothingItem, for occasion: OccasionTier) -> Bool {
+        guard passesFormalityFloor(item, for: occasion) else { return false }
         let formalityAllowed = occasion.allowedFormalityValues.contains(item.formality)
         let typeAllowed = !isTypeExcluded(item.type, keywords: occasion.excludedTypeKeywords)
         let fabricAllowed = !occasion.excludedFabrics.contains(item.fabricEstimate)
-
         return formalityAllowed && typeAllowed && fabricAllowed
     }
 
