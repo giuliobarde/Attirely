@@ -11,32 +11,68 @@ struct AgentView: View {
     @Bindable var weatherViewModel: WeatherViewModel
     var styleViewModel: StyleViewModel
 
-    @State private var isChatOpen = false
-    @State private var showCloseConfirmation = false
+    @State private var showNewChatConfirmation = false
     @State private var selectedItem: ClothingItem?
     @FocusState private var isInputFocused: Bool
 
     private var activeProfile: UserProfile? { profiles.first }
+    private var hasMessages: Bool { !viewModel.messages.isEmpty }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 weatherChip
-                starterScreen
+
+                if hasMessages {
+                    chatScrollView
+                } else {
+                    starterScreen
+                }
             }
             .background(Theme.screenBackground)
             .safeAreaInset(edge: .bottom) {
-                starterInputBar
+                inputBar
             }
+            .animation(.easeInOut(duration: 0.3), value: hasMessages)
             .navigationTitle("Agent")
+            .navigationBarTitleDisplayMode(hasMessages ? .inline : .automatic)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if hasMessages {
+                        Button {
+                            if viewModel.hasUnsavedOutfits {
+                                showNewChatConfirmation = true
+                            } else {
+                                startNewChat()
+                            }
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     WeatherWidgetView(viewModel: weatherViewModel)
                 }
             }
-        }
-        .fullScreenCover(isPresented: $isChatOpen) {
-            chatView
+            .confirmationDialog(
+                "Unsaved Outfits",
+                isPresented: $showNewChatConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Discard & Start New", role: .destructive) {
+                    startNewChat()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You have unsaved outfit suggestions. Starting a new chat will discard them.")
+            }
+            .sheet(item: $selectedItem) { item in
+                NavigationStack {
+                    ItemDetailView(item: item)
+                }
+            }
         }
         .onAppear {
             viewModel.modelContext = modelContext
@@ -57,44 +93,50 @@ struct AgentView: View {
     // MARK: - Starter Screen
 
     private var starterScreen: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    Spacer(minLength: 0)
 
-            VStack(spacing: 12) {
-                Image(systemName: "bubble.left.and.text.bubble.right")
-                    .font(.system(size: 40))
-                    .foregroundStyle(Theme.stone)
+                    VStack(spacing: 12) {
+                        Image(systemName: "bubble.left.and.text.bubble.right")
+                            .font(.system(size: 40))
+                            .foregroundStyle(Theme.stone)
 
-                Text("Style Agent")
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Theme.primaryText)
+                        Text("Style Agent")
+                            .font(.title3)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.primaryText)
 
-                Text("Ask about your wardrobe, get outfit suggestions, or explore your style.")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-                    .multilineTextAlignment(.center)
+                        Text("Ask about your wardrobe, get outfit suggestions, or explore your style.")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+
+                    VStack(spacing: 10) {
+                        starterButton("What should I wear today?")
+                        starterButton("Suggest a casual weekend outfit")
+                        starterButton("What's missing from my wardrobe?")
+                        starterButton("Show me my formal pieces")
+                    }
                     .padding(.horizontal, 32)
-            }
 
-            VStack(spacing: 10) {
-                starterButton("What should I wear today?")
-                starterButton("Suggest a casual weekend outfit")
-                starterButton("What's missing from my wardrobe?")
-                starterButton("Show me my formal pieces")
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                .contentShape(Rectangle())
+                .onTapGesture { isInputFocused = false }
             }
-            .padding(.horizontal, 32)
-
-            Spacer()
+            .scrollDismissesKeyboard(.interactively)
         }
-        .frame(maxWidth: .infinity)
-        .onTapGesture { isInputFocused = false }
+        .transition(.opacity)
     }
 
     private func starterButton(_ text: String) -> some View {
         Button {
             viewModel.sendStarterMessage(text)
-            isChatOpen = true
         } label: {
             Text(text)
                 .font(.subheadline)
@@ -111,9 +153,48 @@ struct AgentView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Starter Input Bar
+    // MARK: - Chat Scroll View
 
-    private var starterInputBar: some View {
+    private var chatScrollView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 14) {
+                    ForEach(viewModel.messages) { message in
+                        AgentMessageBubble(
+                            message: message,
+                            onSaveOutfit: { outfit in
+                                viewModel.saveOutfit(outfit)
+                            },
+                            onItemTap: { item in
+                                selectedItem = item
+                            },
+                            itemsForOutfit: { outfit in
+                                viewModel.displayItems(for: outfit)
+                            }
+                        )
+                        .id(message.id)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 80)
+                .onTapGesture { isInputFocused = false }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: viewModel.messages.count) {
+                if let lastID = viewModel.messages.last?.id {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo(lastID, anchor: .bottom)
+                    }
+                }
+            }
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: - Input Bar
+
+    private var inputBar: some View {
         HStack(spacing: 10) {
             TextField("Ask about your style...", text: $viewModel.inputText, axis: .vertical)
                 .font(.subheadline)
@@ -128,131 +209,7 @@ struct AgentView: View {
                         .stroke(Theme.cardBorder, lineWidth: 0.5)
                 )
                 .onSubmit {
-                    sendFromStarter()
-                }
-
-            Button {
-                sendFromStarter()
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(canSend ? Theme.champagne : Theme.stone)
-            }
-            .disabled(!canSend)
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-    }
-
-    private func sendFromStarter() {
-        guard canSend else { return }
-        viewModel.sendUserMessage()
-        isChatOpen = true
-    }
-
-    // MARK: - Chat View (Full Screen Cover)
-
-    private var chatView: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                weatherChip
-
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 14) {
-                            ForEach(viewModel.messages) { message in
-                                AgentMessageBubble(
-                                    message: message,
-                                    onSaveOutfit: { outfit in
-                                        viewModel.saveOutfit(outfit)
-                                    },
-                                    onItemTap: { item in
-                                        selectedItem = item
-                                    },
-                                    itemsForOutfit: { outfit in
-                                        viewModel.displayItems(for: outfit)
-                                    }
-                                )
-                                .id(message.id)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        .padding(.bottom, 80)
-                        .onTapGesture { isInputFocused = false }
-                    }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onChange(of: viewModel.messages.count) {
-                        if let lastID = viewModel.messages.last?.id {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                proxy.scrollTo(lastID, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
-            }
-            .background(Theme.screenBackground)
-            .safeAreaInset(edge: .bottom) {
-                chatInputBar
-            }
-            .navigationTitle("Agent")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        if viewModel.hasUnsavedOutfits {
-                            showCloseConfirmation = true
-                        } else {
-                            dismissChat()
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(Theme.secondaryText)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    WeatherWidgetView(viewModel: weatherViewModel)
-                }
-            }
-            .confirmationDialog(
-                "Unsaved Outfits",
-                isPresented: $showCloseConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Discard & Close", role: .destructive) {
-                    dismissChat()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("You have unsaved outfit suggestions. Closing will discard them.")
-            }
-            .sheet(item: $selectedItem) { item in
-                NavigationStack {
-                    ItemDetailView(item: item)
-                }
-            }
-        }
-    }
-
-    // MARK: - Chat Input Bar
-
-    private var chatInputBar: some View {
-        HStack(spacing: 10) {
-            TextField("Ask about your style...", text: $viewModel.inputText, axis: .vertical)
-                .font(.subheadline)
-                .lineLimit(1...4)
-                .focused($isInputFocused)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Theme.cardFill)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Theme.cardBorder, lineWidth: 0.5)
-                )
-                .onSubmit {
+                    guard canSend else { return }
                     viewModel.sendUserMessage()
                 }
 
@@ -305,9 +262,8 @@ struct AgentView: View {
         !viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !viewModel.isSending
     }
 
-    private func dismissChat() {
+    private func startNewChat() {
         viewModel.cancelCurrentTask()
         viewModel.clearConversation()
-        isChatOpen = false
     }
 }
