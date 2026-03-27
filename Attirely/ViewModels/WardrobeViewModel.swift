@@ -34,6 +34,7 @@ class WardrobeViewModel {
     var selectedItemIDs: Set<PersistentIdentifier> = []
     var isShowingBulkTagEdit = false
     var isShowingDeleteConfirmation = false
+    var affectedOutfits: [Outfit] = []
     var isShowingFilterSheet = false
 
     var activeFilterCount: Int {
@@ -130,8 +131,28 @@ class WardrobeViewModel {
         exitSelectionMode()
     }
 
+    func computeAffectedOutfits(items: [ClothingItem]) {
+        let targets = items.filter { selectedItemIDs.contains($0.persistentModelID) }
+        var seen = Set<PersistentIdentifier>()
+        var outfits: [Outfit] = []
+        for item in targets {
+            for outfit in item.outfits {
+                if seen.insert(outfit.persistentModelID).inserted {
+                    outfits.append(outfit)
+                }
+            }
+        }
+        affectedOutfits = outfits
+    }
+
     func deleteSelectedItems(items: [ClothingItem], context: ModelContext) {
         let targets = items.filter { selectedItemIDs.contains($0.persistentModelID) }
+
+        // Delete affected outfits first (before nullify severs references)
+        for outfit in affectedOutfits {
+            context.delete(outfit)
+        }
+
         for item in targets {
             if let path = item.imagePath {
                 ImageStorageService.deleteImage(relativePath: path)
@@ -142,12 +163,16 @@ class WardrobeViewModel {
             context.delete(item)
         }
         try? context.save()
+        affectedOutfits = []
         exitSelectionMode()
     }
 
     // MARK: - Single Item Delete
 
-    func deleteItem(_ item: ClothingItem, context: ModelContext) {
+    func deleteItem(_ item: ClothingItem, affectedOutfits: [Outfit], context: ModelContext) {
+        for outfit in affectedOutfits {
+            context.delete(outfit)
+        }
         if let path = item.imagePath {
             ImageStorageService.deleteImage(relativePath: path)
         }

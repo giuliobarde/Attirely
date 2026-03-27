@@ -285,9 +285,19 @@ struct WardrobeView: View {
                 Button("Delete", role: .destructive) {
                     viewModel.deleteSelectedItems(items: allItems, context: modelContext)
                 }
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) {
+                    viewModel.affectedOutfits = []
+                }
             } message: {
-                Text("Delete \(viewModel.selectedItemIDs.count) item\(viewModel.selectedItemIDs.count == 1 ? "" : "s")? This cannot be undone.")
+                let itemCount = viewModel.selectedItemIDs.count
+                let outfits = viewModel.affectedOutfits
+                if outfits.isEmpty {
+                    Text("Delete \(itemCount) item\(itemCount == 1 ? "" : "s")? This cannot be undone.")
+                } else {
+                    let names = outfits.prefix(5).map(\.displayName).joined(separator: ", ")
+                    let suffix = outfits.count > 5 ? " + \(outfits.count - 5) more" : ""
+                    Text("Delete \(itemCount) item\(itemCount == 1 ? "" : "s")? This will also delete \(outfits.count) outfit\(outfits.count == 1 ? "" : "s"): \(names)\(suffix). This cannot be undone.")
+                }
             }
             .photosPicker(isPresented: $isShowingPhotoPicker, selection: $selectedPhotoItem, matching: .images)
             .fullScreenCover(isPresented: $scanViewModel.showingCamera) {
@@ -351,6 +361,7 @@ struct WardrobeView: View {
                 .foregroundStyle(Theme.champagne)
 
             Button {
+                viewModel.computeAffectedOutfits(items: allItems)
                 viewModel.isShowingDeleteConfirmation = true
             } label: {
                 Image(systemName: "trash")

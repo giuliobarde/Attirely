@@ -6,6 +6,7 @@ struct ItemDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirmation = false
+    @State private var affectedOutfits: [Outfit] = []
     @State private var itemTags: [Tag] = []
     @State private var isShowingTagPicker = false
 
@@ -127,6 +128,7 @@ struct ItemDetailView: View {
             // Delete
             Section {
                 Button("Delete Item", role: .destructive) {
+                    affectedOutfits = item.outfits
                     showDeleteConfirmation = true
                 }
             }
@@ -149,8 +151,11 @@ struct ItemDetailView: View {
         .sheet(isPresented: $isShowingTagPicker) {
             TagPickerSheet(selectedTags: $itemTags, scope: .item)
         }
-        .confirmationDialog("Delete this item?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
+        .alert("Delete this item?", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
+                for outfit in affectedOutfits {
+                    modelContext.delete(outfit)
+                }
                 if let path = item.imagePath {
                     ImageStorageService.deleteImage(relativePath: path)
                 }
@@ -160,6 +165,17 @@ struct ItemDetailView: View {
                 modelContext.delete(item)
                 try? modelContext.save()
                 dismiss()
+            }
+            Button("Cancel", role: .cancel) {
+                affectedOutfits = []
+            }
+        } message: {
+            if affectedOutfits.isEmpty {
+                Text("This cannot be undone.")
+            } else {
+                let names = affectedOutfits.prefix(5).map(\.displayName).joined(separator: ", ")
+                let suffix = affectedOutfits.count > 5 ? " + \(affectedOutfits.count - 5) more" : ""
+                Text("This will also delete \(affectedOutfits.count) outfit\(affectedOutfits.count == 1 ? "" : "s"): \(names)\(suffix). This cannot be undone.")
             }
         }
     }
