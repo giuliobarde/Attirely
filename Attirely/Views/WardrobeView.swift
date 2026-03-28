@@ -9,7 +9,7 @@ struct WardrobeView: View {
     @State private var scanViewModel = ScanViewModel()
     @State private var isShowingManualAdd = false
     @State private var isShowingPhotoPicker = false
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @Environment(\.modelContext) private var modelContext
     @Bindable var weatherViewModel: WeatherViewModel
     var styleViewModel: StyleViewModel
@@ -299,7 +299,7 @@ struct WardrobeView: View {
                     Text("Delete \(itemCount) item\(itemCount == 1 ? "" : "s")? This will also delete \(outfits.count) outfit\(outfits.count == 1 ? "" : "s"): \(names)\(suffix). This cannot be undone.")
                 }
             }
-            .photosPicker(isPresented: $isShowingPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+            .photosPicker(isPresented: $isShowingPhotoPicker, selection: $selectedPhotoItems, maxSelectionCount: 5, matching: .images)
             .fullScreenCover(isPresented: $scanViewModel.showingCamera) {
                 ImagePicker(sourceType: .camera) { image in
                     scanViewModel.analyzeImage(image)
@@ -314,15 +314,21 @@ struct WardrobeView: View {
             .navigationDestination(isPresented: $scanViewModel.showingResults) {
                 ResultsView(viewModel: scanViewModel)
             }
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                guard let newItem else { return }
+            .onChange(of: selectedPhotoItems) { _, newItems in
+                guard !newItems.isEmpty else { return }
                 Task {
-                    if let data = try? await newItem.loadTransferable(type: Data.self),
-                       let image = UIImage(data: data) {
-                        scanViewModel.analyzeImage(image)
+                    var images: [UIImage] = []
+                    for item in newItems {
+                        if let data = try? await item.loadTransferable(type: Data.self),
+                           let image = UIImage(data: data) {
+                            images.append(image)
+                        }
+                    }
+                    if !images.isEmpty {
+                        scanViewModel.analyzeImages(images)
                     }
                 }
-                selectedPhotoItem = nil
+                selectedPhotoItems = []
             }
             .onAppear {
                 scanViewModel.modelContext = modelContext

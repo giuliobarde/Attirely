@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ClothingItemCard: View {
     let item: any ClothingItemDisplayable
+    var sourceImageIndices: [Int]? = nil
+    var totalImageCount: Int = 1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -15,6 +17,29 @@ struct ClothingItemCard: View {
 
                 Text(item.category)
                     .themePill()
+            }
+
+            // Source image badges (multi-image scan only)
+            if let indices = sourceImageIndices, totalImageCount > 1 {
+                HStack(spacing: 4) {
+                    Image(systemName: "camera")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                    Text("Found in")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                    ForEach(indices, id: \.self) { index in
+                        Text("\(index + 1)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.champagne)
+                            .frame(width: 18, height: 18)
+                            .background(Theme.champagne.opacity(0.15))
+                            .clipShape(Circle())
+                    }
+                    Text("of \(totalImageCount) photos")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                }
             }
 
             // Color row

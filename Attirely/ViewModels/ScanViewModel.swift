@@ -1,21 +1,31 @@
 import SwiftUI
 import SwiftData
 
+enum ScanProgress: Equatable {
+    case idle
+    case analyzing
+    case checkingDuplicates
+    case complete
+    case error(String)
+}
+
 @Observable
 class ScanViewModel {
-    var isLoading = false
+    var scanProgress: ScanProgress = .idle
     var scannedItems: [ClothingItemDTO] = []
-    var errorMessage: String?
-    var selectedImage: UIImage?
+    var selectedImages: [UIImage] = []
     var showingCamera = false
     var showingResults = false
     var savedItemIDs: Set<UUID> = []
     var dismissedItemIDs: Set<UUID> = []
     var duplicateResults: [UUID: [DuplicateResult]] = [:]
-    var isCheckingDuplicates = false
 
     var modelContext: ModelContext?
     var styleViewModel: StyleViewModel?
+
+    private var analysisTask: Task<Void, Never>?
+
+    // MARK: - Computed Properties
 
     var visibleItems: [ClothingItemDTO] {
         scannedItems.filter { !dismissedItemIDs.contains($0.id) }
@@ -25,43 +35,94 @@ class ScanViewModel {
         visibleItems.contains { !savedItemIDs.contains($0.id) }
     }
 
-    func analyzeImage(_ image: UIImage) {
-        selectedImage = image
+    var isLoading: Bool {
+        switch scanProgress {
+        case .analyzing: return true
+        default: return false
+        }
+    }
+
+    var errorMessage: String? {
+        if case .error(let msg) = scanProgress { return msg }
+        return nil
+    }
+
+    var isCheckingDuplicates: Bool {
+        if case .checkingDuplicates = scanProgress { return true }
+        return false
+    }
+
+    // MARK: - Analysis
+
+    func analyzeImages(_ images: [UIImage]) {
+        analysisTask?.cancel()
+        selectedImages = images
         showingResults = true
-        isLoading = true
-        errorMessage = nil
+        scanProgress = .analyzing
         scannedItems = []
         savedItemIDs = []
         dismissedItemIDs = []
         duplicateResults = [:]
 
-        Task {
+        analysisTask = Task {
             do {
-                // Fetch item-scoped tags for AI auto-tagging
                 let allTags = (try? modelContext?.fetch(FetchDescriptor<Tag>())) ?? []
                 let itemTagNames = allTags.filter { $0.scope == .item }.map(\.name)
 
-                let items = try await AnthropicService.analyzeClothing(image: image, availableItemTagNames: itemTagNames)
+                if Task.isCancelled { return }
+
+                let items: [ClothingItemDTO]
+                if images.count == 1 {
+                    items = try await AnthropicService.analyzeClothing(
+                        image: images[0],
+                        availableItemTagNames: itemTagNames
+                    )
+                } else {
+                    items = try await AnthropicService.analyzeClothingMultiImage(
+                        images: images,
+                        availableItemTagNames: itemTagNames
+                    )
+                }
+
+                if Task.isCancelled { return }
+
                 if items.isEmpty {
-                    self.errorMessage = "No clothing items detected. Try a clearer photo."
+                    self.scanProgress = .error("No clothing items detected. Try a clearer photo.")
                 } else {
                     self.scannedItems = items
-                    await self.checkForDuplicates(items: items, image: image)
+                    self.scanProgress = .checkingDuplicates
+                    await self.checkForDuplicates(items: items)
+                    if !Task.isCancelled {
+                        self.scanProgress = .complete
+                    }
                 }
             } catch {
-                self.errorMessage = error.localizedDescription
+                if !Task.isCancelled {
+                    self.scanProgress = .error(error.localizedDescription)
+                }
             }
-            self.isLoading = false
         }
     }
 
+    func analyzeImage(_ image: UIImage) {
+        analyzeImages([image])
+    }
+
+    // MARK: - Item Actions
+
     func saveItem(_ dto: ClothingItemDTO) {
-        guard let modelContext, let selectedImage else { return }
+        guard let modelContext else { return }
+        let sourceImage = bestSourceImage(for: dto)
+
         do {
-            let scanImagePath = try ImageStorageService.saveScanImage(selectedImage, id: dto.id)
+            let scanImagePath: String?
+            if let sourceImage {
+                scanImagePath = try ImageStorageService.saveScanImage(sourceImage, id: dto.id)
+            } else {
+                scanImagePath = nil
+            }
             let clothingItem = ClothingItem(from: dto, sourceImagePath: scanImagePath)
 
-            // Resolve AI-suggested tags
             if !dto.tags.isEmpty {
                 let allTags = (try? modelContext.fetch(FetchDescriptor<Tag>())) ?? []
                 clothingItem.tags = TagManager.resolveTags(from: dto.tags, allTags: allTags, scope: .item)
@@ -72,7 +133,7 @@ class ScanViewModel {
             savedItemIDs.insert(dto.id)
             notifyStyleAnalysisIfNeeded()
         } catch {
-            errorMessage = "Failed to save item: \(error.localizedDescription)"
+            scanProgress = .error("Failed to save item: \(error.localizedDescription)")
         }
     }
 
@@ -97,15 +158,27 @@ class ScanViewModel {
     }
 
     func retry() {
-        guard let image = selectedImage else { return }
-        analyzeImage(image)
+        guard !selectedImages.isEmpty else { return }
+        analyzeImages(selectedImages)
     }
 
-    private func checkForDuplicates(items: [ClothingItemDTO], image: UIImage) async {
+    // MARK: - Helpers
+
+    func bestSourceImage(for dto: ClothingItemDTO) -> UIImage? {
+        guard !selectedImages.isEmpty else { return nil }
+        let index = dto.sourceImageIndices.first ?? 0
+        guard index < selectedImages.count else { return selectedImages.first }
+        return selectedImages[index]
+    }
+
+    private func checkForDuplicates(items: [ClothingItemDTO]) async {
         guard let modelContext else { return }
-        isCheckingDuplicates = true
 
         for dto in items {
+            if Task.isCancelled { return }
+
+            guard let image = bestSourceImage(for: dto) else { continue }
+
             let category = dto.category
             let color = dto.primaryColor
             let predicate = #Predicate<ClothingItem> {
@@ -125,8 +198,6 @@ class ScanViewModel {
                 }
             }
         }
-
-        isCheckingDuplicates = false
     }
 
     private func notifyStyleAnalysisIfNeeded() {

@@ -16,6 +16,7 @@ struct ClothingItemDTO: Codable, Identifiable {
     var description: String
     var formalityFloor: String?
     var tags: [String]
+    var sourceImageIndices: [Int]
 
     enum CodingKeys: String, CodingKey {
         case type, category, pattern, weight, formality, season, fit, description, tags
@@ -24,6 +25,7 @@ struct ClothingItemDTO: Codable, Identifiable {
         case fabricEstimate = "fabric_estimate"
         case statementLevel = "statement_level"
         case formalityFloor = "formality_floor"
+        case sourceImageIndices = "source_image_indices"
     }
 
     init(from decoder: Decoder) throws {
@@ -43,5 +45,6 @@ struct ClothingItemDTO: Codable, Identifiable {
         self.description = try container.decode(String.self, forKey: .description)
         self.formalityFloor = try? container.decodeIfPresent(String.self, forKey: .formalityFloor)
         self.tags = (try? container.decodeIfPresent([String].self, forKey: .tags)) ?? []
+        self.sourceImageIndices = (try? container.decodeIfPresent([Int].self, forKey: .sourceImageIndices)) ?? [0]
     }
 }

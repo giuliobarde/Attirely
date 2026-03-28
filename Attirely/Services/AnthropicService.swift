@@ -140,6 +140,82 @@ struct AnthropicService {
         return items
     }
 
+    // MARK: - Multi-Image Clothing Analysis
+
+    private static let multiImageAddendum = """
+
+    MULTI-IMAGE SCAN:
+    You are analyzing multiple images at once. The same clothing item may appear in more than one image.
+    - For each unique clothing item detected across ALL images, return ONE entry.
+    - Include a "source_image_indices" field: a JSON array of zero-based image indices where this item is visible. Example: [0, 2] means the item appears in image 0 and image 2.
+    - If the same item appears in multiple images, merge your observations and use the best view for attribute detection.
+    - Do NOT create duplicate entries for the same physical garment seen in different images.
+    """
+
+    static func analyzeClothingMultiImage(
+        images: [UIImage],
+        availableItemTagNames: [String] = []
+    ) async throws -> [ClothingItemDTO] {
+        let apiKey = try ConfigManager.apiKey()
+
+        var contentBlocks: [[String: Any]] = []
+
+        for (index, image) in images.enumerated() {
+            guard let jpegData = image.jpegData(compressionQuality: 0.6) else {
+                throw AnthropicError.invalidImage
+            }
+
+            let base64Image = jpegData.base64EncodedString()
+
+            contentBlocks.append([
+                "type": "text",
+                "text": "Image \(index):"
+            ])
+            contentBlocks.append([
+                "type": "image",
+                "source": [
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": base64Image
+                ]
+            ])
+        }
+
+        let prompt = buildScanPrompt(availableItemTagNames: availableItemTagNames) + multiImageAddendum
+
+        contentBlocks.append([
+            "type": "text",
+            "text": prompt
+        ])
+
+        let requestBody: [String: Any] = [
+            "model": model,
+            "max_tokens": maxTokens,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": contentBlocks
+                ]
+            ]
+        ]
+
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw AnthropicError.decodingError("Invalid text encoding.")
+        }
+
+        let items: [ClothingItemDTO]
+        do {
+            items = try JSONDecoder().decode([ClothingItemDTO].self, from: jsonData)
+        } catch {
+            throw AnthropicError.decodingError(error.localizedDescription)
+        }
+
+        return items
+    }
+
     // MARK: - Duplicate Detection
 
     static func checkDuplicates(
