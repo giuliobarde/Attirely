@@ -10,130 +10,39 @@ struct ItemDetailView: View {
     @State private var itemTags: [Tag] = []
     @State private var isShowingTagPicker = false
 
-    private let allSeasons = ["Spring", "Summer", "Fall", "Winter"]
+    private let categories = ["Top", "Bottom", "Outerwear", "Footwear", "Accessory", "Full Body"]
+    private let patterns = [
+        "Solid", "Striped", "Plaid", "Checkered", "Floral", "Polka Dot",
+        "Paisley", "Geometric", "Abstract", "Animal Print", "Camouflage",
+        "Herringbone", "Houndstooth", "Color Block"
+    ]
+    private let fabrics = [
+        "Cotton", "Polyester", "Wool", "Silk", "Linen", "Denim", "Leather",
+        "Suede", "Nylon", "Cashmere", "Fleece", "Velvet", "Satin", "Tweed",
+        "Corduroy", "Chiffon", "Jersey", "Synthetic Blend"
+    ]
+    private let weights = ["Lightweight", "Midweight", "Heavyweight"]
+    private let formalities = [
+        "Casual", "Smart Casual", "Business Casual", "Business",
+        "Cocktail", "Formal", "Black Tie"
+    ]
+    private let statementLevels = ["Low", "Medium", "High"]
+    private let fits = ["Slim", "Regular", "Relaxed", "Oversized", "Tailored"]
 
     var body: some View {
-        Form {
-            // Image section
-            Section {
-                if let path = item.imagePath ?? item.sourceImagePath,
-                   let image = ImageStorageService.loadImage(relativePath: path) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 250)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .frame(maxWidth: .infinity)
-                }
+        ScrollView {
+            VStack(spacing: 16) {
+                imageSection
+                detailsSection
+                materialSection
+                styleSection
+                seasonSection
+                tagsSection
+                notesSection
+                deleteSection
             }
-
-            // Core details
-            Section("Item Details") {
-                editableField("Type", value: $item.type, field: "type")
-                editableField("Category", value: $item.category, field: "category")
-                editableField("Primary Color", value: $item.primaryColor, field: "primaryColor")
-                optionalField("Secondary Color", value: $item.secondaryColor, field: "secondaryColor")
-                editableField("Pattern", value: $item.pattern, field: "pattern")
-                editableField("Fabric", value: $item.fabricEstimate, field: "fabricEstimate")
-            }
-
-            // Style attributes
-            Section("Style") {
-                editableField("Weight", value: $item.weight, field: "weight")
-                editableField("Formality", value: $item.formality, field: "formality")
-                editableField("Statement Level", value: $item.statementLevel, field: "statementLevel")
-                optionalField("Fit", value: $item.fit, field: "fit")
-                Picker("Formality Floor", selection: Binding(
-                    get: { item.formalityFloor ?? "None" },
-                    set: { item.formalityFloor = $0 == "None" ? nil : $0 }
-                )) {
-                    Text("None").tag("None")
-                    Text("Business").tag("Business")
-                    Text("Cocktail").tag("Cocktail")
-                    Text("Formal").tag("Formal")
-                    Text("Black Tie").tag("Black Tie")
-                }
-            }
-
-            // Season
-            Section("Season") {
-                ForEach(allSeasons, id: \.self) { season in
-                    Toggle(season, isOn: Binding(
-                        get: { item.season.contains(season) },
-                        set: { isOn in
-                            if isOn {
-                                if !item.season.contains(season) {
-                                    item.season.append(season)
-                                }
-                            } else {
-                                item.season.removeAll { $0 == season }
-                            }
-                        }
-                    ))
-                }
-            }
-
-            // Tags
-            Section("Tags") {
-                if itemTags.isEmpty {
-                    Text("No tags")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondaryText)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(itemTags) { tag in
-                                TagChipView(tag: tag)
-                            }
-                        }
-                    }
-                }
-
-                Button {
-                    isShowingTagPicker = true
-                } label: {
-                    Label("Edit Tags", systemImage: "tag")
-                        .foregroundStyle(Theme.champagne)
-                }
-            }
-
-            // Description
-            Section("Description") {
-                VStack(alignment: .leading, spacing: 4) {
-                    TextField("Description", text: $item.itemDescription, axis: .vertical)
-                        .lineLimit(3...6)
-                    if let original = item.originalAIValue(for: "itemDescription"),
-                       original != item.itemDescription {
-                        Text("AI detected: \(original)")
-                            .font(.caption2)
-                            .foregroundStyle(Theme.secondaryText)
-                    }
-                }
-            }
-
-            // User fields
-            Section("Your Notes") {
-                TextField("Brand", text: Binding(
-                    get: { item.brand ?? "" },
-                    set: { item.brand = $0.isEmpty ? nil : $0 }
-                ))
-
-                TextField("Notes", text: Binding(
-                    get: { item.notes ?? "" },
-                    set: { item.notes = $0.isEmpty ? nil : $0 }
-                ), axis: .vertical)
-                .lineLimit(3...6)
-            }
-
-            // Delete
-            Section {
-                Button("Delete Item", role: .destructive) {
-                    affectedOutfits = item.outfits
-                    showDeleteConfirmation = true
-                }
-            }
+            .padding()
         }
-        .scrollContentBackground(.hidden)
         .background(Theme.screenBackground)
         .navigationTitle(item.type)
         .navigationBarTitleDisplayMode(.inline)
@@ -151,7 +60,7 @@ struct ItemDetailView: View {
         .sheet(isPresented: $isShowingTagPicker) {
             TagPickerSheet(selectedTags: $itemTags, scope: .item)
         }
-        .alert("Delete this item?", isPresented: $showDeleteConfirmation) {
+        .confirmationDialog("Delete this item?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 for outfit in affectedOutfits {
                     modelContext.delete(outfit)
@@ -180,26 +89,296 @@ struct ItemDetailView: View {
         }
     }
 
-    private func editableField(_ label: String, value: Binding<String>, field: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            TextField(label, text: value)
-            if let original = item.originalAIValue(for: field),
-               original != value.wrappedValue {
-                Text("AI detected: \(original)")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.secondaryText)
+    // MARK: - Image
+
+    private var imageSection: some View {
+        Group {
+            if let path = item.imagePath ?? item.sourceImagePath,
+               let image = ImageStorageService.loadImage(relativePath: path) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity)
             }
         }
     }
 
-    private func optionalField(_ label: String, value: Binding<String?>, field: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            TextField(label, text: Binding(
-                get: { value.wrappedValue ?? "" },
-                set: { value.wrappedValue = $0.isEmpty ? nil : $0 }
-            ))
+    // MARK: - Details
+
+    private var detailsSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Details")
+
+            editableField("Type", value: $item.type, field: "type")
+
+            PillPickerField(
+                label: "Category",
+                options: categories,
+                selection: $item.category,
+                aiOriginalValue: item.originalAIValue(for: "category")
+            )
+
+            ColorSwatchPicker(
+                label: "Primary Color",
+                selection: $item.primaryColor,
+                aiOriginalValue: item.originalAIValue(for: "primaryColor")
+            )
+
+            ColorSwatchPicker(
+                label: "Secondary Color",
+                selection: Binding(
+                    get: { item.secondaryColor ?? "" },
+                    set: { item.secondaryColor = $0.isEmpty ? nil : $0 }
+                ),
+                allowsNone: true,
+                aiOriginalValue: item.originalAIValue(for: "secondaryColor")
+            )
+        }
+        .themeCard()
+    }
+
+    // MARK: - Material
+
+    private var materialSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Material")
+
+            PillPickerField(
+                label: "Pattern",
+                options: patterns,
+                selection: $item.pattern,
+                allowsCustom: true,
+                aiOriginalValue: item.originalAIValue(for: "pattern")
+            )
+
+            PillPickerField(
+                label: "Fabric",
+                options: fabrics,
+                selection: $item.fabricEstimate,
+                allowsCustom: true,
+                aiOriginalValue: item.originalAIValue(for: "fabricEstimate")
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Weight")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Picker("Weight", selection: $item.weight) {
+                    ForEach(weights, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                if let original = item.originalAIValue(for: "weight"), original != item.weight {
+                    Text("AI detected: \(original)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+        }
+        .themeCard()
+    }
+
+    // MARK: - Style
+
+    private var styleSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Style")
+
+            PillPickerField(
+                label: "Formality",
+                options: formalities,
+                selection: $item.formality,
+                aiOriginalValue: item.originalAIValue(for: "formality")
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Statement Level")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Picker("Statement Level", selection: $item.statementLevel) {
+                    ForEach(statementLevels, id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                if let original = item.originalAIValue(for: "statementLevel"), original != item.statementLevel {
+                    Text("AI detected: \(original)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+
+            OptionalPillPickerField(
+                label: "Fit",
+                options: fits,
+                selection: $item.fit,
+                aiOriginalValue: item.originalAIValue(for: "fit")
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Formality Floor")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Picker("Formality Floor", selection: Binding(
+                    get: { item.formalityFloor ?? "None" },
+                    set: { item.formalityFloor = $0 == "None" ? nil : $0 }
+                )) {
+                    Text("None").tag("None")
+                    Text("Business").tag("Business")
+                    Text("Cocktail").tag("Cocktail")
+                    Text("Formal").tag("Formal")
+                    Text("Black Tie").tag("Black Tie")
+                }
+            }
+        }
+        .themeCard()
+    }
+
+    // MARK: - Season
+
+    private var seasonSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Season")
+
+            HStack(spacing: 8) {
+                ForEach(["Spring", "Summer", "Fall", "Winter"], id: \.self) { season in
+                    let isActive = item.season.contains(season)
+                    Button {
+                        if isActive {
+                            item.season.removeAll { $0 == season }
+                        } else {
+                            item.season.append(season)
+                        }
+                    } label: {
+                        Text(season)
+                            .themePill(isActive: isActive)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .themeCard()
+    }
+
+    // MARK: - Tags
+
+    private var tagsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Tags")
+
+            if itemTags.isEmpty {
+                Text("No tags")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
+            } else {
+                FlowLayout(spacing: 6) {
+                    ForEach(itemTags) { tag in
+                        TagChipView(tag: tag)
+                    }
+                }
+            }
+
+            Button {
+                isShowingTagPicker = true
+            } label: {
+                Label("Edit Tags", systemImage: "tag")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.champagne)
+            }
+        }
+        .themeCard()
+    }
+
+    // MARK: - Notes
+
+    private var notesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Notes")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Description")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                TextField("Description", text: $item.itemDescription, axis: .vertical)
+                    .lineLimit(3...6)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline)
+
+                if let original = item.originalAIValue(for: "itemDescription"),
+                   original != item.itemDescription {
+                    Text("AI detected: \(original)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Brand")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                TextField("Brand", text: Binding(
+                    get: { item.brand ?? "" },
+                    set: { item.brand = $0.isEmpty ? nil : $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Notes")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                TextField("Notes", text: Binding(
+                    get: { item.notes ?? "" },
+                    set: { item.notes = $0.isEmpty ? nil : $0 }
+                ), axis: .vertical)
+                .lineLimit(3...6)
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+            }
+        }
+        .themeCard()
+    }
+
+    // MARK: - Delete
+
+    private var deleteSection: some View {
+        Button("Delete Item", role: .destructive) {
+            affectedOutfits = item.outfits
+            showDeleteConfirmation = true
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Helpers
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .foregroundStyle(Theme.primaryText)
+    }
+
+    private func editableField(_ label: String, value: Binding<String>, field: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+
+            TextField(label, text: value)
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+
             if let original = item.originalAIValue(for: field),
-               original != (value.wrappedValue ?? "") {
+               original != value.wrappedValue {
                 Text("AI detected: \(original)")
                     .font(.caption2)
                     .foregroundStyle(Theme.secondaryText)

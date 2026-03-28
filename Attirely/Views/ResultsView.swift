@@ -133,8 +133,8 @@ struct ResultsView: View {
                     .opacity(appearedItemIDs.contains(dto.id) ? 1 : 0)
                     .offset(y: appearedItemIDs.contains(dto.id) ? 0 : 20)
                     .onAppear {
-                        withAnimation(.spring(duration: 0.4).delay(Double(index) * 0.05)) {
-                            appearedItemIDs.insert(dto.id)
+                        withAnimation(Animation.spring(duration: 0.4).delay(Double(index) * 0.05)) {
+                            _ = appearedItemIDs.insert(dto.id)
                         }
                     }
                 }
