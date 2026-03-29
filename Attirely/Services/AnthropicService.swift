@@ -321,7 +321,11 @@ struct AnthropicService {
     - The outfit must have 3 to 6 items
     - Include exactly one pair of footwear (if available)
     - Include either one bottom OR one full body item (dress/jumpsuit), not both
-    - Include 1-2 tops (unless a full body item is selected)
+    - Include 1-2 tops (unless a full body item is selected). When including 2 tops, they must be \
+    different layer weights — pair a base layer (t-shirt, button-up, blouse) with a mid-layer \
+    (sweater, cardigan, hoodie), NOT two mid-layers together (e.g., hoodie + pullover sweater is wrong). \
+    If COMFORT CONSTRAINTS below indicate "Minimal layers" or "Happy to layer", prefer just 1 top. \
+    Only pair 2 tops when the user explicitly loves layering or weather demands it.
     - Include 0-2 outerwear pieces depending on season
     - Include 0-2 accessories to complete the look
     - Each item ID must be unique — do not use the same item twice

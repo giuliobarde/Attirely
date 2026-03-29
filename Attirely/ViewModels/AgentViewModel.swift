@@ -419,11 +419,24 @@ class AgentViewModel {
         return (result, top, [], nil)
     }
 
+    private static let searchStopWords: Set<String> = [
+        "a", "an", "the", "for", "to", "in", "on", "with", "and", "or", "my",
+        "any", "some", "that", "this", "those", "these", "of", "is", "are",
+        "it", "its", "i", "me", "do", "have", "has", "can", "would", "could",
+        "today", "tonight", "tomorrow", "weather", "something", "anything", "items"
+    ]
+
     private func executeSearchWardrobe(_ input: SearchWardrobeInput) -> (String, [Outfit], [ClothingItem], String?) {
         let query = input.query.lowercased()
         let words = query.split(separator: " ").map { String($0) }
+            .filter { !Self.searchStopWords.contains($0) }
 
-        let matches = wardrobeItems.filter { item in
+        guard !words.isEmpty else {
+            return ("No items found matching '\(input.query)'.", [], [], nil)
+        }
+
+        // Score items by how many query words match (not all-or-nothing)
+        let scored = wardrobeItems.compactMap { item -> (ClothingItem, Int)? in
             let searchableText = [
                 item.type, item.category, item.primaryColor,
                 item.secondaryColor ?? "", item.pattern,
@@ -432,8 +445,12 @@ class AgentViewModel {
                 item.season.joined(separator: " ")
             ].joined(separator: " ").lowercased()
 
-            return words.allSatisfy { searchableText.contains($0) }
+            let matchCount = words.filter { searchableText.contains($0) }.count
+            return matchCount > 0 ? (item, matchCount) : nil
         }
+        .sorted { $0.1 > $1.1 }
+
+        let matches = scored.map(\.0)
 
         if matches.isEmpty {
             return ("No items found matching '\(input.query)'.", [], [], nil)
@@ -781,6 +798,12 @@ class AgentViewModel {
             only find a heavy sweatshirt in summer heat, point this out and ask if they'd like to proceed.
             - When the user references specific items or colors ("my leather jacket", "something red"), \
             always searchWardrobe first to find exact matches and assess their suitability.
+            - CRITICAL — ANCHOR CARRYOVER: When you've discussed specific items or colors with the user \
+            and they confirm (e.g., you found red Jordan 1s and the user says "casual day"), you MUST \
+            pass those discussed items in must_include_items when calling generateOutfit. Use the item's \
+            type and primary color (e.g., "red high top sneakers"). Do NOT lose the color/item context \
+            from earlier in the conversation — the user expects the generated outfit to feature what \
+            was discussed, not a different color or item.
             - Summarize your plan briefly before calling generateOutfit ("I'll put together a casual \
             look anchored on your navy blazer — let me build something around it").
             - FAST-TRACK: If the user specifies a clear occasion AND has no ambiguous preferences \

@@ -142,7 +142,7 @@ struct AgentService {
                 "properties": [
                     "query": [
                         "type": "string",
-                        "description": "Natural language description of what to find, e.g. 'blue tops', 'formal shoes', 'lightweight summer items', 'anything with stripes'."
+                        "description": "Short keyword query using item attributes (color, type, category, fabric, pattern). Examples: 'red', 'blue tops', 'formal shoes', 'linen', 'striped'. Keep it concise — avoid filler words like 'for', 'today', 'weather'."
                     ]
                 ],
                 "required": ["query"]
