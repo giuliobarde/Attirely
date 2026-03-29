@@ -4,6 +4,10 @@ import SwiftData
 @Observable
 class AgentViewModel {
 
+    // MARK: - Agent Mode
+
+    var effectiveMode: AgentMode = .conversational
+
     // MARK: - Conversation State
 
     var messages: [ChatMessage] = []
@@ -66,6 +70,24 @@ class AgentViewModel {
     func updateStyleContext(from summary: StyleSummary?) {
         styleSummaryText = StyleContextHelper.styleContextString(from: summary)
         styleSummary = summary
+    }
+
+    func resolveEffectiveMode(from profile: UserProfile?) {
+        guard let profile else { return }
+        switch profile.agentMode {
+        case .conversational: effectiveMode = .conversational
+        case .direct: effectiveMode = .direct
+        case .lastUsed: effectiveMode = profile.agentLastActiveMode
+        }
+    }
+
+    func toggleMode() {
+        effectiveMode = (effectiveMode == .conversational) ? .direct : .conversational
+        if userProfile?.agentMode == .lastUsed {
+            userProfile?.agentLastActiveMode = effectiveMode
+            userProfile?.updatedAt = Date()
+            try? modelContext?.save()
+        }
     }
 
     // MARK: - Send Message
@@ -225,10 +247,22 @@ class AgentViewModel {
             let apiKey = try ConfigManager.apiKey()
             _ = apiKey // used by AnthropicService internally
 
+            // Resolve must-include items against full wardrobe (before filtering)
+            let mustIncludeResolved = input.mustIncludeItems.compactMap { desc in
+                matchItem(description: desc, in: wardrobeItems)
+            }
+            let mustIncludeIDs = Set(mustIncludeResolved.map(\.id))
+
             // Map free-form occasion string to OccasionTier and filter items
             let tier = input.occasion.flatMap { OccasionTier(fromString: $0) }
             let filterResult = OccasionFilter.filterItems(wardrobeItems, for: tier)
             let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
+
+            // Re-inject must-include items that were filtered out
+            var filteredItems = filterResult.items
+            for item in mustIncludeResolved where !filteredItems.contains(where: { $0.id == item.id }) {
+                filteredItems.append(item)
+            }
 
             // Score and select candidate items for token efficiency
             let observations = styleSummary?.activeObservations ?? []
@@ -239,9 +273,14 @@ class AgentViewModel {
                 observations: observations,
                 allOutfits: allOutfits
             )
-            let scoredItems = RelevanceScorer.selectCandidates(from: filterResult.items, config: scorerConfig)
-            let candidateItems = scoredItems.map(\.item)
+            let scoredItems = RelevanceScorer.selectCandidates(from: filteredItems, config: scorerConfig)
+            var candidateItems = scoredItems.map(\.item)
             let relevanceHints = Dictionary(uniqueKeysWithValues: scoredItems.map { ($0.item.id, $0.score) })
+
+            // Re-inject must-include items that were scored out
+            for item in mustIncludeResolved where !candidateItems.contains(where: { $0.id == item.id }) {
+                candidateItems.append(item)
+            }
 
             // Build observation context for prompt injection
             let observationPrompt = ObservationManager.promptString(from: observations, forOccasion: tier)
@@ -255,6 +294,8 @@ class AgentViewModel {
             let outfitTags = allTags.filter { $0.scope == .outfit }
             let tagNames = outfitTags.map(\.name)
 
+            let mustIncludeIDStrings = Set(mustIncludeResolved.map(\.id.uuidString))
+
             let suggestions = try await AnthropicService.generateOutfits(
                 from: candidateItems,
                 occasion: input.occasion,
@@ -266,14 +307,21 @@ class AgentViewModel {
                 existingOutfitItemSets: existingItemSets,
                 availableTagNames: tagNames,
                 observationContext: observationPrompt,
-                itemRelevanceHints: relevanceHints
+                itemRelevanceHints: relevanceHints,
+                mustIncludeItemIDs: mustIncludeIDStrings
             )
 
             var createdOutfits: [Outfit] = []
             for suggestion in suggestions {
-                let matchedItems = candidateItems.filter {
+                var matchedItems = candidateItems.filter {
                     suggestion.itemIDs.contains($0.id.uuidString)
                 }
+
+                // Force-add must-include items that the AI omitted
+                for item in mustIncludeResolved where !matchedItems.contains(where: { $0.id == item.id }) {
+                    matchedItems.append(item)
+                }
+
                 let minRequired = min(3, suggestion.itemIDs.count)
                 guard matchedItems.count >= minRequired else { continue }
 
@@ -643,9 +691,13 @@ class AgentViewModel {
         - When the user asks about specific ITEMS they own ("do I have any blazers?", "what blue tops do I have?"), use the searchWardrobe tool.
         - When the user wants to MODIFY an outfit from this conversation ("swap the shoes", "add a jacket", "remove the tie", "make it more casual", "rename it"), use the editOutfit tool.
         - When the user states a preference/dislike OR you observe a behavioral pattern from their edits/rejections, use updateStyleInsight. Include category and signal when you can determine them.
-        - When the phrasing is AMBIGUOUS ("what should I wear today"), default to generateOutfit.
+        - When the user wants an outfit built around a SPECIFIC ITEM or COLOR ("build around my leather jacket", "something red"), use searchWardrobe first to find matching items, then use generateOutfit with must_include_items to anchor on those pieces.
+        \(ambiguousIntentRule)
         - If searchOutfits returns no results, explain that and offer to generate something new instead.
         """
+
+        // Mode-specific behavior block
+        prompt += "\n\n\(modeBehaviorBlock)"
 
         // Weather context
         if let weather = weatherViewModel?.weatherContextString {
@@ -700,6 +752,50 @@ class AgentViewModel {
         }
 
         return prompt
+    }
+
+    private var ambiguousIntentRule: String {
+        switch effectiveMode {
+        case .conversational:
+            return """
+            - When the phrasing is AMBIGUOUS ("what should I wear today", "dress me up"), do NOT \
+            immediately call generateOutfit. Instead, explore with searchWardrobe first and discuss \
+            options before generating. EXCEPTION: if the user specifies a clear occasion AND has no \
+            ambiguous preferences AND weather conditions are moderate, you may generate directly.
+            """
+        case .direct, .lastUsed:
+            return "- When the phrasing is AMBIGUOUS (\"what should I wear today\"), default to generateOutfit."
+        }
+    }
+
+    private var modeBehaviorBlock: String {
+        switch effectiveMode {
+        case .conversational:
+            return """
+            BEHAVIOR MODE: CONVERSATIONAL
+            - For ambiguous outfit requests, do NOT call generateOutfit on your first turn.
+            - Instead, use searchWardrobe to explore what's available for the context (weather, occasion, color).
+            - Ask clarifying questions when the request is vague: occasion, formality, color preferences.
+            - Proactively flag mismatches between the request and reality: limited color options, \
+            weather conflicts, seasonal issues. For example, if the user asks for red items but you \
+            only find a heavy sweatshirt in summer heat, point this out and ask if they'd like to proceed.
+            - When the user references specific items or colors ("my leather jacket", "something red"), \
+            always searchWardrobe first to find exact matches and assess their suitability.
+            - Summarize your plan briefly before calling generateOutfit ("I'll put together a casual \
+            look anchored on your navy blazer — let me build something around it").
+            - FAST-TRACK: If the user specifies a clear occasion AND has no ambiguous preferences \
+            AND the wardrobe has suitable items for the current weather, go ahead and generate directly.
+            """
+        case .direct, .lastUsed:
+            return """
+            BEHAVIOR MODE: DIRECT
+            - Default to generateOutfit immediately for any outfit request, including ambiguous ones.
+            - Be efficient: generate first, discuss after if the user wants changes.
+            - Skip clarifying questions unless the request is impossible to fulfill.
+            - When the user references specific items, pass them via must_include_items with your best \
+            description match based on type and color.
+            """
+        }
     }
 
 }

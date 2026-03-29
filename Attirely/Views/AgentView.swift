@@ -53,6 +53,25 @@ struct AgentView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    if hasMessages {
+                        Button { viewModel.toggleMode() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: viewModel.effectiveMode == .conversational
+                                    ? "bubble.left.and.bubble.right" : "bolt.fill")
+                                    .font(.caption2)
+                                Text(viewModel.effectiveMode == .conversational ? "Chat" : "Direct")
+                                    .font(.caption2)
+                                    .fontWeight(.medium)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Theme.pillDefaultBg)
+                            .foregroundStyle(Theme.champagne)
+                            .clipShape(Capsule())
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     WeatherWidgetView(viewModel: weatherViewModel)
                 }
             }
@@ -81,6 +100,7 @@ struct AgentView: View {
             viewModel.styleViewModel = styleViewModel
             viewModel.updateStyleContext(from: styleSummaries.first)
             viewModel.refreshWardrobe(items: wardrobeItems, outfits: allOutfits)
+            viewModel.resolveEffectiveMode(from: activeProfile)
         }
         .onChange(of: wardrobeItems.count) {
             viewModel.refreshWardrobe(items: wardrobeItems, outfits: allOutfits)

@@ -263,8 +263,42 @@ struct ProfileView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
             }
+
+            Divider()
+
+            // Agent Mode
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Style Agent")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Picker("Agent Mode", selection: Binding(
+                    get: { profile.agentMode },
+                    set: { viewModel.updateAgentMode($0, profile: profile) }
+                )) {
+                    ForEach(AgentMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(agentModeDescription(profile.agentMode))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
         }
         .themeCard()
+    }
+
+    private func agentModeDescription(_ mode: AgentMode) -> String {
+        switch mode {
+        case .conversational:
+            "Explores your wardrobe and asks questions before suggesting outfits."
+        case .direct:
+            "Generates outfits immediately without clarifying questions."
+        case .lastUsed:
+            "Uses whichever mode you last selected in chat."
+        }
     }
 
     // MARK: - Style & Comfort

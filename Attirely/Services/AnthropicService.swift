@@ -360,7 +360,8 @@ struct AnthropicService {
         existingOutfitItemSets: [[String]] = [],
         availableTagNames: [String] = [],
         observationContext: String? = nil,
-        itemRelevanceHints: [UUID: Double]? = nil
+        itemRelevanceHints: [UUID: Double]? = nil,
+        mustIncludeItemIDs: Set<String> = []
     ) async throws -> [OutfitSuggestionDTO] {
         guard items.count >= 2 else {
             throw AnthropicError.insufficientWardrobe
@@ -397,6 +398,10 @@ struct AnthropicService {
             contextSection += "Respect these patterns unless they conflict with dress code requirements.\n\n"
         }
 
+        if !mustIncludeItemIDs.isEmpty {
+            contextSection += "MUST-INCLUDE CONSTRAINT: The outfit MUST contain all items marked [MUST INCLUDE] below. Build the outfit around these anchor pieces. Do not omit them.\n\n"
+        }
+
         if let season { contextSection += "Current season: \(season)\n" }
         if let weatherContext { contextSection += "Current weather:\n\(weatherContext)\n" }
 
@@ -419,7 +424,9 @@ struct AnthropicService {
             }
             itemList += " | \(item.pattern) | \(item.fabricEstimate) | \(item.formality) | seasons:\(item.season.joined(separator: ","))"
             itemList += " | \(item.itemDescription)"
-            if let score = itemRelevanceHints?[item.id], score > 0.7 {
+            if mustIncludeItemIDs.contains(item.id.uuidString) {
+                itemList += " | [MUST INCLUDE]"
+            } else if let score = itemRelevanceHints?[item.id], score > 0.7 {
                 itemList += " | [STRONG MATCH]"
             }
             itemList += "\n"

@@ -35,10 +35,12 @@ struct ToolUseBlock: @unchecked Sendable {
 struct GenerateOutfitInput {
     let occasion: String?
     let constraints: String?
+    let mustIncludeItems: [String]
 
     init(from json: [String: Any]) {
         self.occasion = json["occasion"] as? String
         self.constraints = json["constraints"] as? String
+        self.mustIncludeItems = (json["must_include_items"] as? [String]) ?? []
     }
 }
 

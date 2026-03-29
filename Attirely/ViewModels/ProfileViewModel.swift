@@ -172,6 +172,12 @@ class ProfileViewModel {
         regenerateTemplateSummaryIfNeeded(profile: profile)
     }
 
+    func updateAgentMode(_ mode: AgentMode, profile: UserProfile) {
+        profile.agentMode = mode
+        profile.updatedAt = Date()
+        try? modelContext?.save()
+    }
+
     // MARK: - Style Summary
 
     func regenerateTemplateSummaryIfNeeded(profile: UserProfile) {

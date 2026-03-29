@@ -77,8 +77,10 @@ struct AgentService {
             "description": """
                 Generate a complete outfit from the user's wardrobe based on current weather \
                 and preferences. Call this when the user asks for outfit suggestions, asks what \
-                to wear, or requests an outfit for a specific occasion. Returns a styled outfit \
-                with reasoning.
+                to wear, or requests an outfit for a specific occasion. When the user wants an \
+                outfit built around specific items, use must_include_items to anchor the generation \
+                on those pieces. Use searchWardrobe first to verify items exist. Returns a styled \
+                outfit with reasoning.
                 """,
             "input_schema": [
                 "type": "object",
@@ -90,6 +92,15 @@ struct AgentService {
                     "constraints": [
                         "type": "string",
                         "description": "Optional freeform styling constraints from the conversation, e.g. 'avoid heavy fabrics', 'include the navy jacket', 'something comfortable'."
+                    ],
+                    "must_include_items": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": """
+                            Item descriptions that MUST appear in the generated outfit (e.g., \
+                            'black leather jacket', 'red dress'). Use searchWardrobe first to \
+                            verify items exist, then reference them here by type and color.
+                            """
                     ]
                 ],
                 "required": [] as [String]

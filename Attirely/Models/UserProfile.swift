@@ -42,6 +42,12 @@ enum WeatherDressingApproach: String, CaseIterable {
     case overdress = "Always overdress for warmth"
 }
 
+enum AgentMode: String, CaseIterable {
+    case conversational = "Conversational"
+    case direct = "Direct"
+    case lastUsed = "Last used"
+}
+
 @Model
 final class UserProfile {
     @Attribute(.unique) var id: UUID
@@ -71,6 +77,10 @@ final class UserProfile {
 
     // Siri integration
     var isSiriAIGenerationEnabled: Bool = false
+
+    // Agent mode
+    var agentModeRaw: String?
+    var agentLastActiveModeRaw: String?
 
     var createdAt: Date
     var updatedAt: Date
@@ -110,6 +120,16 @@ final class UserProfile {
     var weatherDressingApproachEnum: WeatherDressingApproach? {
         get { weatherDressingApproach.flatMap { WeatherDressingApproach(rawValue: $0) } }
         set { weatherDressingApproach = newValue?.rawValue }
+    }
+
+    var agentMode: AgentMode {
+        get { agentModeRaw.flatMap { AgentMode(rawValue: $0) } ?? .conversational }
+        set { agentModeRaw = newValue.rawValue }
+    }
+
+    var agentLastActiveMode: AgentMode {
+        get { agentLastActiveModeRaw.flatMap { AgentMode(rawValue: $0) } ?? .conversational }
+        set { agentLastActiveModeRaw = newValue.rawValue }
     }
 
     var selectedStylesArray: [String] {
