@@ -20,6 +20,13 @@ class ScanViewModel {
     var dismissedItemIDs: Set<UUID> = []
     var duplicateResults: [UUID: [DuplicateResult]] = [:]
 
+    // Outfit detection
+    var outfitSuggestion: ScanOutfitSuggestionDTO?
+    var outfitSaved = false
+
+    // "Use Existing" duplicate linking
+    var existingItemMapping: [UUID: ClothingItem] = [:]
+
     var modelContext: ModelContext?
     var styleViewModel: StyleViewModel?
 
@@ -32,7 +39,7 @@ class ScanViewModel {
     }
 
     var hasUnsavedItems: Bool {
-        visibleItems.contains { !savedItemIDs.contains($0.id) }
+        visibleItems.contains { !savedItemIDs.contains($0.id) && existingItemMapping[$0.id] == nil }
     }
 
     var isLoading: Bool {
@@ -52,6 +59,26 @@ class ScanViewModel {
         return false
     }
 
+    // MARK: - Outfit Detection Computed Properties
+
+    var outfitCompleteness: OutfitCompletenessValidator.Result {
+        let categories = visibleItems.map { dto in
+            if let existing = existingItemMapping[dto.id] {
+                return existing.category
+            }
+            return dto.category
+        }
+        return OutfitCompletenessValidator.validate(categories: categories)
+    }
+
+    var isOutfitSaveEnabled: Bool {
+        outfitSuggestion != nil && outfitCompleteness != .invalid
+    }
+
+    var canSaveOutfit: Bool {
+        isOutfitSaveEnabled
+    }
+
     // MARK: - Analysis
 
     func analyzeImages(_ images: [UIImage]) {
@@ -63,6 +90,9 @@ class ScanViewModel {
         savedItemIDs = []
         dismissedItemIDs = []
         duplicateResults = [:]
+        outfitSuggestion = nil
+        outfitSaved = false
+        existingItemMapping = [:]
 
         analysisTask = Task {
             do {
@@ -73,10 +103,12 @@ class ScanViewModel {
 
                 let items: [ClothingItemDTO]
                 if images.count == 1 {
-                    items = try await AnthropicService.analyzeClothing(
+                    let response = try await AnthropicService.analyzeClothingWithOutfitDetection(
                         image: images[0],
                         availableItemTagNames: itemTagNames
                     )
+                    items = response.items
+                    self.outfitSuggestion = response.outfit
                 } else {
                     items = try await AnthropicService.analyzeClothingMultiImage(
                         images: images,
@@ -112,6 +144,7 @@ class ScanViewModel {
 
     func saveItem(_ dto: ClothingItemDTO) {
         guard let modelContext else { return }
+        guard existingItemMapping[dto.id] == nil else { return }
         let sourceImage = bestSourceImage(for: dto)
 
         do {
@@ -138,7 +171,7 @@ class ScanViewModel {
     }
 
     func saveAllItems() {
-        for item in visibleItems where !savedItemIDs.contains(item.id) {
+        for item in visibleItems where !savedItemIDs.contains(item.id) && existingItemMapping[item.id] == nil {
             saveItem(item)
         }
     }
@@ -157,9 +190,69 @@ class ScanViewModel {
         savedItemIDs.contains(dto.id)
     }
 
+    func isItemLinked(_ dto: ClothingItemDTO) -> Bool {
+        existingItemMapping[dto.id] != nil
+    }
+
     func retry() {
         guard !selectedImages.isEmpty else { return }
         analyzeImages(selectedImages)
+    }
+
+    // MARK: - "Use Existing" Actions
+
+    func useExistingItem(dtoID: UUID, existingItem: ClothingItem) {
+        existingItemMapping[dtoID] = existingItem
+    }
+
+    func revertToNewItem(dtoID: UUID) {
+        existingItemMapping.removeValue(forKey: dtoID)
+    }
+
+    // MARK: - Outfit Actions
+
+    func saveOutfit(name: String, occasion: String) {
+        guard let modelContext else { return }
+
+        // Auto-save any unsaved new items first
+        for dto in visibleItems where !savedItemIDs.contains(dto.id) && existingItemMapping[dto.id] == nil {
+            saveItem(dto)
+        }
+
+        var outfitItems: [ClothingItem] = []
+        for dto in visibleItems {
+            if let existing = existingItemMapping[dto.id] {
+                outfitItems.append(existing)
+            } else if savedItemIDs.contains(dto.id) {
+                let dtoID = dto.id
+                let predicate = #Predicate<ClothingItem> { $0.id == dtoID }
+                let descriptor = FetchDescriptor<ClothingItem>(predicate: predicate)
+                if let item = try? modelContext.fetch(descriptor).first {
+                    outfitItems.append(item)
+                }
+            }
+        }
+
+        guard outfitItems.count >= 2 else { return }
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedOccasion = occasion.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let outfit = Outfit(
+            name: trimmedName.isEmpty ? nil : trimmedName,
+            occasion: trimmedOccasion.isEmpty ? nil : trimmedOccasion,
+            reasoning: outfitSuggestion?.reasoning,
+            isAIGenerated: true,
+            items: outfitItems
+        )
+
+        modelContext.insert(outfit)
+        do {
+            try modelContext.save()
+            outfitSaved = true
+        } catch {
+            scanProgress = .error("Failed to save outfit: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Helpers

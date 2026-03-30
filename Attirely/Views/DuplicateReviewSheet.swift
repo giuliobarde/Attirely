@@ -5,7 +5,12 @@ struct DuplicateReviewSheet: View {
     let duplicates: [DuplicateResult]
     let onSaveAnyway: () -> Void
     let onSkip: () -> Void
+    var onUseExisting: ((ClothingItem) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+
+    private var hasSameItemMatch: Bool {
+        duplicates.contains { $0.classification == .sameItem }
+    }
 
     var body: some View {
         NavigationStack {
@@ -42,7 +47,11 @@ struct DuplicateReviewSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     ForEach(Array(duplicates.enumerated()), id: \.offset) { _, result in
-                        DuplicateMatchCard(result: result)
+                        DuplicateMatchCard(
+                            result: result,
+                            onUseExisting: result.classification == .sameItem ? onUseExisting : nil,
+                            onDismissSheet: { dismiss() }
+                        )
                     }
 
                     // Actions
@@ -51,7 +60,7 @@ struct DuplicateReviewSheet: View {
                             onSaveAnyway()
                             dismiss()
                         } label: {
-                            Label("Save Anyway", systemImage: "plus.circle")
+                            Label("Save as New Item", systemImage: "plus.circle")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.themePrimary)
@@ -85,6 +94,8 @@ struct DuplicateReviewSheet: View {
 
 struct DuplicateMatchCard: View {
     let result: DuplicateResult
+    var onUseExisting: ((ClothingItem) -> Void)? = nil
+    var onDismissSheet: (() -> Void)? = nil
 
     private var classificationLabel: String {
         switch result.classification {
@@ -105,9 +116,30 @@ struct DuplicateMatchCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(result.existingItem.type)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.primaryText)
+                // Thumbnail of existing item
+                if let path = result.existingItem.sourceImagePath,
+                   let image = ImageStorageService.loadImage(relativePath: path) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(result.existingItem.type)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.primaryText)
+
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(ColorMapping.color(for: result.existingItem.primaryColor))
+                            .frame(width: 14, height: 14)
+                        Text("\(result.existingItem.primaryColor) \(result.existingItem.pattern)")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
 
                 Spacer()
 
@@ -121,18 +153,21 @@ struct DuplicateMatchCard: View {
                     .clipShape(Capsule())
             }
 
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(ColorMapping.color(for: result.existingItem.primaryColor))
-                    .frame(width: 14, height: 14)
-                Text("\(result.existingItem.primaryColor) \(result.existingItem.pattern)")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
-            }
-
             Text(result.explanation)
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
+
+            if let onUseExisting {
+                Button {
+                    onUseExisting(result.existingItem)
+                    onDismissSheet?()
+                } label: {
+                    Label("Use This One", systemImage: "link.circle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.themeSecondary)
+            }
         }
         .themeCard()
     }

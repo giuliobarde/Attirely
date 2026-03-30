@@ -101,6 +101,7 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 - **v0.9.2** — SSE streaming, conversational outfit editing, chat as fullScreenCover
 - **v0.10** — Style intelligence: agent behavioral notes, item formality floor, relevance scoring, tier-based filtering
 - **v0.10.1** — Conversational agent mode: three-state toggle (Conversational/Direct/Last Used), item-anchored generation via `must_include_items`, color/attribute-aware wardrobe exploration, in-chat mode toggle
+- **v0.10.2** — Outfit detection at scan time, "Use Existing" duplicate linking, footwear nudge
 
 ## Roadmap
 

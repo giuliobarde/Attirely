@@ -140,6 +140,110 @@ struct AnthropicService {
         return items
     }
 
+    // MARK: - Single-Image Clothing Analysis with Outfit Detection
+
+    private static let outfitDetectionReturnFormat = """
+
+    OUTFIT DETECTION:
+    After identifying all items, assess whether the items in this image form a cohesive outfit \
+    (e.g., a full-body photo of a person wearing a complete look, a styled flat-lay, a mannequin display). \
+    If yes, include an "outfit" object in the response. If no, set "outfit" to null.
+
+    Do NOT suggest an outfit if the image only shows isolated items (e.g., a single shirt on a hanger, \
+    items clearly from different contexts, items laid out individually without styling intent). \
+    Only suggest an outfit when the items are clearly styled together as a deliberate combination.
+
+    Return ONLY a valid JSON object (NOT a plain array) with this structure:
+    {
+      "items": [ ...array of item objects as described above... ],
+      "outfit": {
+        "name": "short evocative name (e.g., 'Weekend Brunch', 'Office Sharp')",
+        "occasion": "one of Casual, Smart Casual, Business Casual, Business, Formal, Cocktail",
+        "reasoning": "one sentence explaining why these items work together as an outfit"
+      }
+    }
+
+    Set "outfit" to null if the items do not form a cohesive outfit.
+
+    No markdown, no explanation, no code fences. Just the raw JSON object.
+
+    If no clothing items are detected, return: {"items": [], "outfit": null}
+    """
+
+    private static func buildScanWithOutfitDetectionPrompt(availableItemTagNames: [String]) -> String {
+        // Take the base analysis prompt but strip the return format instructions
+        var prompt = analysisPrompt
+            .replacingOccurrences(
+                of: "\n    Return ONLY a valid JSON array of objects. No markdown, no explanation, no code fences. Just the raw JSON array.\n\n    If no clothing items are detected, return an empty array: []",
+                with: ""
+            )
+
+        if !availableItemTagNames.isEmpty {
+            let tagSection = """
+
+            - tags: array of 1-3 tag name strings chosen from this exact list that match the item: [\(availableItemTagNames.joined(separator: ", "))]. Pick tags that describe the item's usage, seasonality, or character. Return an empty array if no tags fit.
+            """
+            prompt += tagSection
+        }
+
+        prompt += outfitDetectionReturnFormat
+        return prompt
+    }
+
+    static func analyzeClothingWithOutfitDetection(
+        image: UIImage,
+        availableItemTagNames: [String] = []
+    ) async throws -> ScanResponseDTO {
+        let apiKey = try ConfigManager.apiKey()
+
+        guard let jpegData = image.jpegData(compressionQuality: 0.6) else {
+            throw AnthropicError.invalidImage
+        }
+
+        let base64Image = jpegData.base64EncodedString()
+
+        let prompt = buildScanWithOutfitDetectionPrompt(availableItemTagNames: availableItemTagNames)
+
+        let requestBody: [String: Any] = [
+            "model": model,
+            "max_tokens": maxTokens,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": [
+                        [
+                            "type": "image",
+                            "source": [
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": base64Image
+                            ]
+                        ],
+                        [
+                            "type": "text",
+                            "text": prompt
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw AnthropicError.decodingError("Invalid text encoding.")
+        }
+
+        // Try wrapper format first, fall back to flat array
+        if let response = try? JSONDecoder().decode(ScanResponseDTO.self, from: jsonData) {
+            return response
+        }
+
+        let items = try JSONDecoder().decode([ClothingItemDTO].self, from: jsonData)
+        return ScanResponseDTO(items: items, outfit: nil)
+    }
+
     // MARK: - Multi-Image Clothing Analysis
 
     private static let multiImageAddendum = """

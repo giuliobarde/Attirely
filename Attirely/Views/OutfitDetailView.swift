@@ -128,6 +128,27 @@ struct OutfitDetailView: View {
                 }
                 .padding(.horizontal)
 
+                // Footwear nudge
+                if !isEditing && !outfit.items.contains(where: { $0.category == "Footwear" }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "shoe.fill")
+                            .font(.caption)
+                            .foregroundStyle(Theme.champagne)
+                        Text("Consider adding footwear to complete this outfit")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.champagne.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Theme.champagne.opacity(0.2), lineWidth: 0.5)
+                    )
+                    .padding(.horizontal)
+                }
+
                 // AI reasoning
                 if let reasoning = outfit.reasoning, outfit.isAIGenerated {
                     VStack(alignment: .leading, spacing: 4) {

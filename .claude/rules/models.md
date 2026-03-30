@@ -21,6 +21,8 @@ globs:
 - `OutfitSuggestionDTO.wardrobeGaps: [String]` — resilient decoder
 - `StyleAnalysisDTO.styleModes` defaults to empty array if null
 - `OutfitSuggestionDTO.spokenSummary: String?` — conversational voice description for Siri
+- `ScanResponseDTO` wraps `items: [ClothingItemDTO]` + `outfit: ScanOutfitSuggestionDTO?` — used by single-image outfit detection scan
+- `ScanOutfitSuggestionDTO` has `name`, `occasion`, `reasoning` — simpler than `OutfitSuggestionDTO` (no item_ids, no tags, no wardrobe_gaps)
 
 ## Structural Rules
 - No business logic, no API calls, no UI code in model files

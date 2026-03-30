@@ -30,3 +30,17 @@ globs:
 - Add items via `OutfitEditItemPicker`, remove via inline minus button
 - Composition warnings from `OutfitLayerOrder.warnings()` are advisory only (multiple footwear, full-body + top/bottom conflicts)
 - Tags edited via `TagPickerSheet` binding; changes applied only on save
+- Footwear nudge: shown in `OutfitDetailView` when outfit has no footwear items (non-edit mode only)
+
+## Scan Results & Outfit Detection
+- `ResultsView` shows individual item cards with Save/Edit/Dismiss actions
+- When single-image scan detects an outfit: inline editable outfit card appears above item list (name TextField, occasion TextField, reasoning text, save button)
+- Outfit card visibility driven by `OutfitCompletenessValidator`: requires (Top+Bottom) OR Full Body; missing footwear is OK (`.validMissingFootwear` shows tip)
+- "Save as Outfit" disabled until all items are saved or linked to existing
+- Dismissing items re-evaluates completeness — card hides if outfit becomes invalid
+
+## Duplicate "Use Existing" Flow
+- `DuplicateReviewSheet` has three actions: "Save as New Item", "Use This One" (per `.sameItem` match), "Skip This Item"
+- "Use This One" links to existing wardrobe item via `ScanViewModel.existingItemMapping`
+- Linked items show `link.circle.fill` badge + "Undo" button in `ResultsView`
+- Linked items participate in outfit save without creating duplicates

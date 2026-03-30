@@ -7,6 +7,11 @@ struct ResultsView: View {
     @State private var editingItem: ClothingItemDTO?
     @State private var appearedItemIDs: Set<UUID> = []
 
+    // Outfit editing state
+    @State private var editOutfitName = ""
+    @State private var editOutfitOccasion = ""
+    @State private var outfitNameSynced = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -35,6 +40,13 @@ struct ResultsView: View {
         .onAppear {
             viewModel.modelContext = modelContext
         }
+        .onChange(of: viewModel.outfitSuggestion?.name) { _, newName in
+            if !outfitNameSynced, let suggestion = viewModel.outfitSuggestion {
+                editOutfitName = suggestion.name
+                editOutfitOccasion = suggestion.occasion
+                outfitNameSynced = true
+            }
+        }
         .sheet(item: $duplicateReviewItem) { dto in
             if let results = viewModel.duplicateResults[dto.id] {
                 DuplicateReviewSheet(
@@ -45,6 +57,9 @@ struct ResultsView: View {
                     },
                     onSkip: {
                         viewModel.dismissItem(dto)
+                    },
+                    onUseExisting: { existingItem in
+                        viewModel.useExistingItem(dtoID: dto.id, existingItem: existingItem)
                     }
                 )
             }
@@ -105,6 +120,13 @@ struct ResultsView: View {
                 .padding(.horizontal)
             }
 
+            // Outfit suggestion card
+            if viewModel.isOutfitSaveEnabled {
+                outfitSuggestionCard
+                    .padding(.horizontal)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // Item cards
             LazyVStack(spacing: 12) {
                 ForEach(Array(viewModel.visibleItems.enumerated()), id: \.element.id) { index, dto in
@@ -115,16 +137,19 @@ struct ResultsView: View {
                             totalImageCount: viewModel.selectedImages.count
                         )
 
-                        // Duplicate warning
-                        if let duplicates = viewModel.duplicateResults[dto.id] {
+                        // Duplicate warning (hide if already linked to existing)
+                        if viewModel.existingItemMapping[dto.id] == nil,
+                           let duplicates = viewModel.duplicateResults[dto.id] {
                             DuplicateWarningBanner(
                                 results: duplicates,
                                 onReview: { duplicateReviewItem = dto }
                             )
                         }
 
-                        // Save/dismiss controls
-                        if viewModel.isItemSaved(dto) {
+                        // Item status: linked / saved / actions
+                        if viewModel.isItemLinked(dto) {
+                            linkedItemBadge(for: dto)
+                        } else if viewModel.isItemSaved(dto) {
                             savedBadge
                         } else {
                             itemActions(for: dto)
@@ -140,6 +165,115 @@ struct ResultsView: View {
                 }
             }
             .padding(.horizontal)
+        }
+    }
+
+    // MARK: - Outfit Suggestion Card
+
+    @ViewBuilder
+    private var outfitSuggestionCard: some View {
+        if viewModel.outfitSaved {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.champagne)
+                Text("Outfit Saved")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.champagne)
+            }
+            .transition(.scale.combined(with: .opacity))
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                // Header
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.champagne)
+                    Text("Outfit Detected")
+                        .font(.headline)
+                        .foregroundStyle(Theme.primaryText)
+                }
+
+                // Editable name
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Name")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                    TextField("Outfit name", text: $editOutfitName)
+                        .font(.subheadline)
+                        .padding(8)
+                        .background(Theme.screenBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Theme.cardBorder, lineWidth: 0.5)
+                        )
+                }
+
+                // Editable occasion
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Occasion")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                    TextField("Occasion", text: $editOutfitOccasion)
+                        .font(.subheadline)
+                        .padding(8)
+                        .background(Theme.screenBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Theme.cardBorder, lineWidth: 0.5)
+                        )
+                }
+
+                // AI reasoning
+                if let reasoning = viewModel.outfitSuggestion?.reasoning {
+                    Text(reasoning)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                        .italic()
+                }
+
+                // Composition warnings
+                let warningItems = viewModel.visibleItems.compactMap { dto -> ClothingItem? in
+                    viewModel.existingItemMapping[dto.id]
+                }
+                let warnings = OutfitLayerOrder.warnings(for: warningItems)
+                if !warnings.isEmpty {
+                    ForEach(warnings, id: \.self) { warning in
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                            Text(warning)
+                                .font(.caption)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    }
+                }
+
+                // Missing footwear tip
+                if case .validMissingFootwear = viewModel.outfitCompleteness {
+                    HStack(spacing: 6) {
+                        Image(systemName: "shoe.fill")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.champagne)
+                        Text("You can add footwear later")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
+
+                // Save as Outfit button
+                Button {
+                    viewModel.saveOutfit(name: editOutfitName, occasion: editOutfitOccasion)
+                } label: {
+                    Label("Save as Outfit", systemImage: "rectangle.stack.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.themePrimary)
+                .disabled(!viewModel.canSaveOutfit)
+            }
+            .themeCard()
         }
     }
 
@@ -180,6 +314,33 @@ struct ResultsView: View {
                     )
             }
         }
+    }
+
+    // MARK: - Linked Item Badge
+
+    private func linkedItemBadge(for dto: ClothingItemDTO) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "link.circle.fill")
+                .foregroundStyle(Theme.champagne)
+            if let existing = viewModel.existingItemMapping[dto.id] {
+                Text("Linked to \(existing.type)")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.champagne)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    viewModel.revertToNewItem(dtoID: dto.id)
+                }
+            } label: {
+                Text("Undo")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+        .transition(.scale.combined(with: .opacity))
     }
 
     // MARK: - Saved Badge

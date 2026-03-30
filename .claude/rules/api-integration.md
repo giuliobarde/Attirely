@@ -13,8 +13,9 @@ globs:
 - Auth: `x-api-key` from `Config.plist` via `ConfigManager`
 - Model: `claude-sonnet-4-20250514`, version header: `anthropic-version: 2023-06-01`
 - Images: base64-encoded JPEG at 0.6 compression quality
-- Scan response: extract `content[0].text`, decode as JSON array of `ClothingItemDTO`
-- All AI requests use 2048 max tokens
+- Single-image scan: `analyzeClothingWithOutfitDetection()` returns `ScanResponseDTO` (wrapper with `items` + optional `outfit` suggestion). Fallback: if wrapper decode fails, falls back to `[ClothingItemDTO]` with `outfit: nil`
+- Multi-image scan: `analyzeClothingMultiImage()` returns flat `[ClothingItemDTO]` (no outfit detection)
+- All AI requests use 2048 max tokens (scan uses 4096)
 
 ## Outfit Generation Pipeline
 - Text-only request — sends **scored candidate** wardrobe item attributes with UUIDs (no images)
