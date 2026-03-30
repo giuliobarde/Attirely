@@ -251,8 +251,6 @@ class AgentViewModel {
             let mustIncludeResolved = input.mustIncludeItems.compactMap { desc in
                 matchItem(description: desc, in: wardrobeItems)
             }
-            let mustIncludeIDs = Set(mustIncludeResolved.map(\.id))
-
             // Map free-form occasion string to OccasionTier and filter items
             let tier = input.occasion.flatMap { OccasionTier(fromString: $0) }
             let filterResult = OccasionFilter.filterItems(wardrobeItems, for: tier)
