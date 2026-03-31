@@ -9,6 +9,12 @@ struct ItemDetailView: View {
     @State private var affectedOutfits: [Outfit] = []
     @State private var itemTags: [Tag] = []
     @State private var isShowingTagPicker = false
+    @State private var isDetailsExpanded = true
+    @State private var isMaterialExpanded = false
+    @State private var isStyleExpanded = false
+    @State private var isSeasonExpanded = false
+    @State private var isTagsExpanded = false
+    @State private var isNotesExpanded = false
 
     private let categories = ["Top", "Bottom", "Outerwear", "Footwear", "Accessory", "Full Body"]
     private let patterns = [
@@ -108,142 +114,137 @@ struct ItemDetailView: View {
     // MARK: - Details
 
     private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("Details")
+        CollapsibleSection(title: "Details", isExpanded: $isDetailsExpanded, titleWeight: .semibold) {
+            VStack(alignment: .leading, spacing: 14) {
+                editableField("Type", value: $item.type, field: "type")
 
-            editableField("Type", value: $item.type, field: "type")
+                PillPickerField(
+                    label: "Category",
+                    options: categories,
+                    selection: $item.category,
+                    aiOriginalValue: item.originalAIValue(for: "category")
+                )
 
-            PillPickerField(
-                label: "Category",
-                options: categories,
-                selection: $item.category,
-                aiOriginalValue: item.originalAIValue(for: "category")
-            )
+                ColorSwatchPicker(
+                    label: "Primary Color",
+                    selection: $item.primaryColor,
+                    aiOriginalValue: item.originalAIValue(for: "primaryColor")
+                )
 
-            ColorSwatchPicker(
-                label: "Primary Color",
-                selection: $item.primaryColor,
-                aiOriginalValue: item.originalAIValue(for: "primaryColor")
-            )
-
-            ColorSwatchPicker(
-                label: "Secondary Color",
-                selection: Binding(
-                    get: { item.secondaryColor ?? "" },
-                    set: { item.secondaryColor = $0.isEmpty ? nil : $0 }
-                ),
-                allowsNone: true,
-                aiOriginalValue: item.originalAIValue(for: "secondaryColor")
-            )
+                ColorSwatchPicker(
+                    label: "Secondary Color",
+                    selection: Binding(
+                        get: { item.secondaryColor ?? "" },
+                        set: { item.secondaryColor = $0.isEmpty ? nil : $0 }
+                    ),
+                    allowsNone: true,
+                    aiOriginalValue: item.originalAIValue(for: "secondaryColor")
+                )
+            }
         }
-        .themeCard()
     }
 
     // MARK: - Material
 
     private var materialSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("Material")
+        CollapsibleSection(title: "Material", isExpanded: $isMaterialExpanded, titleWeight: .semibold) {
+            VStack(alignment: .leading, spacing: 14) {
+                PillPickerField(
+                    label: "Pattern",
+                    options: patterns,
+                    selection: $item.pattern,
+                    allowsCustom: true,
+                    aiOriginalValue: item.originalAIValue(for: "pattern")
+                )
 
-            PillPickerField(
-                label: "Pattern",
-                options: patterns,
-                selection: $item.pattern,
-                allowsCustom: true,
-                aiOriginalValue: item.originalAIValue(for: "pattern")
-            )
+                PillPickerField(
+                    label: "Fabric",
+                    options: fabrics,
+                    selection: $item.fabricEstimate,
+                    allowsCustom: true,
+                    aiOriginalValue: item.originalAIValue(for: "fabricEstimate")
+                )
 
-            PillPickerField(
-                label: "Fabric",
-                options: fabrics,
-                selection: $item.fabricEstimate,
-                allowsCustom: true,
-                aiOriginalValue: item.originalAIValue(for: "fabricEstimate")
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Weight")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
-
-                Picker("Weight", selection: $item.weight) {
-                    ForEach(weights, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.segmented)
-
-                if let original = item.originalAIValue(for: "weight"), original != item.weight {
-                    Text("AI detected: \(original)")
-                        .font(.caption2)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Weight")
+                        .font(.caption)
                         .foregroundStyle(Theme.secondaryText)
+
+                    Picker("Weight", selection: $item.weight) {
+                        ForEach(weights, id: \.self) { Text($0).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if let original = item.originalAIValue(for: "weight"), original != item.weight {
+                        Text("AI detected: \(original)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
                 }
             }
         }
-        .themeCard()
     }
 
     // MARK: - Style
 
     private var styleSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("Style")
+        CollapsibleSection(title: "Style", isExpanded: $isStyleExpanded, titleWeight: .semibold) {
+            VStack(alignment: .leading, spacing: 14) {
+                PillPickerField(
+                    label: "Formality",
+                    options: formalities,
+                    selection: $item.formality,
+                    aiOriginalValue: item.originalAIValue(for: "formality")
+                )
 
-            PillPickerField(
-                label: "Formality",
-                options: formalities,
-                selection: $item.formality,
-                aiOriginalValue: item.originalAIValue(for: "formality")
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Statement Level")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
-
-                Picker("Statement Level", selection: $item.statementLevel) {
-                    ForEach(statementLevels, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.segmented)
-
-                if let original = item.originalAIValue(for: "statementLevel"), original != item.statementLevel {
-                    Text("AI detected: \(original)")
-                        .font(.caption2)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Statement Level")
+                        .font(.caption)
                         .foregroundStyle(Theme.secondaryText)
+
+                    Picker("Statement Level", selection: $item.statementLevel) {
+                        ForEach(statementLevels, id: \.self) { Text($0).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if let original = item.originalAIValue(for: "statementLevel"), original != item.statementLevel {
+                        Text("AI detected: \(original)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
                 }
-            }
 
-            OptionalPillPickerField(
-                label: "Fit",
-                options: fits,
-                selection: $item.fit,
-                aiOriginalValue: item.originalAIValue(for: "fit")
-            )
+                OptionalPillPickerField(
+                    label: "Fit",
+                    options: fits,
+                    selection: $item.fit,
+                    aiOriginalValue: item.originalAIValue(for: "fit")
+                )
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Formality Floor")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Formality Floor")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
 
-                Picker("Formality Floor", selection: Binding(
-                    get: { item.formalityFloor ?? "None" },
-                    set: { item.formalityFloor = $0 == "None" ? nil : $0 }
-                )) {
-                    Text("None").tag("None")
-                    Text("Business").tag("Business")
-                    Text("Cocktail").tag("Cocktail")
-                    Text("Formal").tag("Formal")
-                    Text("Black Tie").tag("Black Tie")
+                    Picker("Formality Floor", selection: Binding(
+                        get: { item.formalityFloor ?? "None" },
+                        set: { item.formalityFloor = $0 == "None" ? nil : $0 }
+                    )) {
+                        Text("None").tag("None")
+                        Text("Business").tag("Business")
+                        Text("Cocktail").tag("Cocktail")
+                        Text("Formal").tag("Formal")
+                        Text("Black Tie").tag("Black Tie")
+                    }
                 }
             }
         }
-        .themeCard()
     }
 
     // MARK: - Season
 
     private var seasonSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Season")
-
+        CollapsibleSection(title: "Season", isExpanded: $isSeasonExpanded, titleWeight: .semibold) {
             HStack(spacing: 8) {
                 ForEach(["Spring", "Summer", "Fall", "Winter"], id: \.self) { season in
                     let isActive = item.season.contains(season)
@@ -261,90 +262,87 @@ struct ItemDetailView: View {
                 }
             }
         }
-        .themeCard()
     }
 
     // MARK: - Tags
 
     private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Tags")
-
-            if itemTags.isEmpty {
-                Text("No tags")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondaryText)
-            } else {
-                FlowLayout(spacing: 6) {
-                    ForEach(itemTags) { tag in
-                        TagChipView(tag: tag)
+        CollapsibleSection(title: "Tags", isExpanded: $isTagsExpanded, titleWeight: .semibold) {
+            VStack(alignment: .leading, spacing: 8) {
+                if itemTags.isEmpty {
+                    Text("No tags")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
+                } else {
+                    FlowLayout(spacing: 6) {
+                        ForEach(itemTags) { tag in
+                            TagChipView(tag: tag)
+                        }
                     }
                 }
-            }
 
-            Button {
-                isShowingTagPicker = true
-            } label: {
-                Label("Edit Tags", systemImage: "tag")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.champagne)
+                Button {
+                    isShowingTagPicker = true
+                } label: {
+                    Label("Edit Tags", systemImage: "tag")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.champagne)
+                }
             }
         }
-        .themeCard()
     }
 
     // MARK: - Notes
 
     private var notesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("Notes")
+        CollapsibleSection(title: "Notes", isExpanded: $isNotesExpanded, titleWeight: .semibold) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Description")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
+                    TextField("Description", text: $item.itemDescription, axis: .vertical)
+                        .lineLimit(3...6)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.subheadline)
 
-                TextField("Description", text: $item.itemDescription, axis: .vertical)
+                    if let original = item.originalAIValue(for: "itemDescription"),
+                       original != item.itemDescription {
+                        Text("AI detected: \(original)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Brand")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+
+                    TextField("Brand", text: Binding(
+                        get: { item.brand ?? "" },
+                        set: { item.brand = $0.isEmpty ? nil : $0 }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.subheadline)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Notes")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+
+                    TextField("Notes", text: Binding(
+                        get: { item.notes ?? "" },
+                        set: { item.notes = $0.isEmpty ? nil : $0 }
+                    ), axis: .vertical)
                     .lineLimit(3...6)
                     .textFieldStyle(.roundedBorder)
                     .font(.subheadline)
-
-                if let original = item.originalAIValue(for: "itemDescription"),
-                   original != item.itemDescription {
-                    Text("AI detected: \(original)")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.secondaryText)
                 }
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Brand")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
-
-                TextField("Brand", text: Binding(
-                    get: { item.brand ?? "" },
-                    set: { item.brand = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .font(.subheadline)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Notes")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
-
-                TextField("Notes", text: Binding(
-                    get: { item.notes ?? "" },
-                    set: { item.notes = $0.isEmpty ? nil : $0 }
-                ), axis: .vertical)
-                .lineLimit(3...6)
-                .textFieldStyle(.roundedBorder)
-                .font(.subheadline)
-            }
         }
-        .themeCard()
     }
 
     // MARK: - Delete
@@ -359,13 +357,6 @@ struct ItemDetailView: View {
     }
 
     // MARK: - Helpers
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline)
-            .fontWeight(.semibold)
-            .foregroundStyle(Theme.primaryText)
-    }
 
     private func editableField(_ label: String, value: Binding<String>, field: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {

@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct ResultsView: View {
     let viewModel: ScanViewModel

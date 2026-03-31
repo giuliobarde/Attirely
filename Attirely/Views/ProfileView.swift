@@ -11,6 +11,10 @@ struct ProfileView: View {
 
     @State private var viewModel = ProfileViewModel()
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var isPreferencesExpanded = false
+    @State private var isStyleComfortExpanded = false
+    @State private var isStyleSummaryExpanded = false
+    @State private var isAnalyticsExpanded = false
     var styleViewModel: StyleViewModel
 
     private var profile: UserProfile? { profiles.first }
@@ -122,12 +126,8 @@ struct ProfileView: View {
     // MARK: - Preferences
 
     private func preferencesSection(_ profile: UserProfile) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Preferences")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(Theme.primaryText)
-
+        CollapsibleSection(title: "Preferences", isExpanded: $isPreferencesExpanded) {
+            VStack(alignment: .leading, spacing: 16) {
             // Temperature unit
             VStack(alignment: .leading, spacing: 6) {
                 Text("Temperature Unit")
@@ -286,8 +286,8 @@ struct ProfileView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
             }
+            }
         }
-        .themeCard()
     }
 
     private func agentModeDescription(_ mode: AgentMode) -> String {
@@ -304,12 +304,8 @@ struct ProfileView: View {
     // MARK: - Style & Comfort
 
     private func styleComfortSection(_ profile: UserProfile) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Style & Comfort")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(Theme.primaryText)
-
+        CollapsibleSection(title: "Style & Comfort", isExpanded: $isStyleComfortExpanded) {
+            VStack(alignment: .leading, spacing: 16) {
             // Cold sensitivity
             VStack(alignment: .leading, spacing: 6) {
                 Text("Cold Sensitivity")
@@ -448,44 +444,46 @@ struct ProfileView: View {
                 }
                 .pickerStyle(.segmented)
             }
+            }
         }
-        .themeCard()
     }
 
     // MARK: - Style Summary
 
     private var styleSummarySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let title = styleSummaries.first?.isAIEnriched == true ? "Your Style Profile" : "Style Summary"
+        return CollapsibleSection(
+            title: title,
+            isExpanded: $isStyleSummaryExpanded,
+            trailing: styleSummaryTrailingButton
+        ) {
             if let summary = styleSummaries.first, summary.isAIEnriched {
                 aiEnrichedSummary(summary)
             } else {
                 templateSummary
             }
         }
-        .themeCard()
     }
 
-    private func aiEnrichedSummary(_ summary: StyleSummary) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                Text("Your Style Profile")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Theme.primaryText)
-                Spacer()
+    private var styleSummaryTrailingButton: some View {
+        Group {
+            if styleSummaries.first != nil {
                 Button(viewModel.isEditingStyleSummary ? "Done" : "Edit") {
                     if viewModel.isEditingStyleSummary {
                         viewModel.updateSummaryText(viewModel.editedStyleSummary)
                     } else {
-                        viewModel.editedStyleSummary = summary.overallIdentity
+                        viewModel.editedStyleSummary = styleSummaries.first?.overallIdentity ?? ""
                     }
                     viewModel.isEditingStyleSummary.toggle()
                 }
                 .font(.caption)
                 .foregroundStyle(Theme.champagne)
             }
+        }
+    }
 
+    private func aiEnrichedSummary(_ summary: StyleSummary) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             // Overall identity
             if viewModel.isEditingStyleSummary {
                 TextEditor(text: $viewModel.editedStyleSummary)
@@ -609,26 +607,6 @@ struct ProfileView: View {
 
     private var templateSummary: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Your Style Summary")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Theme.primaryText)
-                Spacer()
-                if styleSummaries.first != nil {
-                    Button(viewModel.isEditingStyleSummary ? "Done" : "Edit") {
-                        if viewModel.isEditingStyleSummary {
-                            viewModel.updateSummaryText(viewModel.editedStyleSummary)
-                        } else {
-                            viewModel.editedStyleSummary = styleSummaries.first?.overallIdentity ?? ""
-                        }
-                        viewModel.isEditingStyleSummary.toggle()
-                    }
-                    .font(.caption)
-                    .foregroundStyle(Theme.champagne)
-                }
-            }
-
             if let summary = styleSummaries.first {
                 if viewModel.isEditingStyleSummary {
                     TextEditor(text: $viewModel.editedStyleSummary)
@@ -706,13 +684,7 @@ struct ProfileView: View {
     // MARK: - Analytics
 
     private var analyticsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Wardrobe Analytics")
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(Theme.primaryText)
-                .padding(.leading, 4)
-
+        CollapsibleSection(title: "Wardrobe Analytics", isExpanded: $isAnalyticsExpanded) {
             WardrobeAnalyticsView(items: clothingItems, viewModel: viewModel)
         }
     }
