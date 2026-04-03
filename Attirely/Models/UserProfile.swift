@@ -48,6 +48,11 @@ enum AgentMode: String, CaseIterable {
     case lastUsed = "Last used"
 }
 
+enum StyleModePreference: String, CaseIterable {
+    case improve = "Improve"
+    case expand  = "Expand"
+}
+
 @Model
 final class UserProfile {
     @Attribute(.unique) var id: UUID
@@ -81,6 +86,10 @@ final class UserProfile {
     // Agent mode
     var agentModeRaw: String?
     var agentLastActiveModeRaw: String?
+
+    // Style mode
+    var styleModeRaw: String = StyleModePreference.improve.rawValue
+    var hasSeenStyleModeOnboarding: Bool = false
 
     var createdAt: Date
     var updatedAt: Date
@@ -130,6 +139,11 @@ final class UserProfile {
     var agentLastActiveMode: AgentMode {
         get { agentLastActiveModeRaw.flatMap { AgentMode(rawValue: $0) } ?? .conversational }
         set { agentLastActiveModeRaw = newValue.rawValue }
+    }
+
+    var styleMode: StyleModePreference {
+        get { StyleModePreference(rawValue: styleModeRaw) ?? .improve }
+        set { styleModeRaw = newValue.rawValue }
     }
 
     var selectedStylesArray: [String] {

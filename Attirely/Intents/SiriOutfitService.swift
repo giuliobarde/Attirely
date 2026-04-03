@@ -281,7 +281,8 @@ enum SiriOutfitService {
             existingOutfitItemSets: Array(existingItemSets),
             availableTagNames: tagNames,
             observationContext: observationPrompt,
-            itemRelevanceHints: relevanceHints
+            itemRelevanceHints: relevanceHints,
+            styleMode: profile?.styleMode
         )
 
         guard let suggestion = suggestions.first else {

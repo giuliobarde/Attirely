@@ -178,6 +178,12 @@ class ProfileViewModel {
         try? modelContext?.save()
     }
 
+    func updateStyleMode(_ mode: StyleModePreference, profile: UserProfile) {
+        profile.styleMode = mode
+        profile.updatedAt = Date()
+        try? modelContext?.save()
+    }
+
     // MARK: - Style Summary
 
     func regenerateTemplateSummaryIfNeeded(profile: UserProfile) {

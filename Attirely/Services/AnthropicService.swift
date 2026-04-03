@@ -469,7 +469,8 @@ struct AnthropicService {
         availableTagNames: [String] = [],
         observationContext: String? = nil,
         itemRelevanceHints: [UUID: Double]? = nil,
-        mustIncludeItemIDs: Set<String> = []
+        mustIncludeItemIDs: Set<String> = [],
+        styleMode: StyleModePreference? = nil
     ) async throws -> [OutfitSuggestionDTO] {
         guard items.count >= 2 else {
             throw AnthropicError.insufficientWardrobe
@@ -504,6 +505,28 @@ struct AnthropicService {
         if let observationContext {
             contextSection += "USER BEHAVIORAL PATTERNS:\n\(observationContext)\n"
             contextSection += "Respect these patterns unless they conflict with dress code requirements.\n\n"
+        }
+
+        if let styleMode {
+            let styleModeText: String
+            switch styleMode {
+            case .improve:
+                styleModeText = """
+                STYLE MODE — IMPROVE:
+                Steer this outfit toward polished, refined aesthetics (preppy, smart casual, business casual). \
+                Even if the wardrobe skews casual or eclectic, prioritize combinations that feel put-together \
+                and elevated. Avoid overly casual combinations when more polished options are available. \
+                Temperature sensitivity, layering preferences, and all comfort constraints above still take priority.
+                """
+            case .expand:
+                styleModeText = """
+                STYLE MODE — EXPAND:
+                Infer the user's personal style from the items they own and their saved outfits. \
+                Generate suggestions consistent with and expressive of their established aesthetic. \
+                Trust the style signals in their wardrobe rather than pushing toward a generic ideal.
+                """
+            }
+            contextSection += "\(styleModeText)\n\n"
         }
 
         if !mustIncludeItemIDs.isEmpty {

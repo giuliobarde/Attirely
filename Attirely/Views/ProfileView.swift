@@ -286,6 +286,29 @@ struct ProfileView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
             }
+
+            Divider()
+
+            // Style Mode
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Outfit Style Mode")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+
+                Picker("Style Mode", selection: Binding(
+                    get: { profile.styleMode },
+                    set: { viewModel.updateStyleMode($0, profile: profile) }
+                )) {
+                    ForEach(StyleModePreference.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(styleModeDescription(profile.styleMode))
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryText)
+            }
             }
         }
     }
@@ -298,6 +321,15 @@ struct ProfileView: View {
             "Generates outfits immediately without clarifying questions."
         case .lastUsed:
             "Uses whichever mode you last selected in chat."
+        }
+    }
+
+    private func styleModeDescription(_ mode: StyleModePreference) -> String {
+        switch mode {
+        case .improve:
+            "Steers suggestions toward polished, refined looks regardless of wardrobe style."
+        case .expand:
+            "Personalizes suggestions to match your detected aesthetic as your wardrobe grows."
         }
     }
 

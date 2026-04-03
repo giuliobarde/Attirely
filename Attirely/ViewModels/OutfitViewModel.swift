@@ -174,7 +174,8 @@ class OutfitViewModel {
                     existingOutfitItemSets: existingItemSets,
                     availableTagNames: tagNames,
                     observationContext: observationPrompt,
-                    itemRelevanceHints: relevanceHints
+                    itemRelevanceHints: relevanceHints,
+                    styleMode: userProfile?.styleMode
                 )
 
                 var created: [Outfit] = []

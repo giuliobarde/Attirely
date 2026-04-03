@@ -8,6 +8,7 @@ struct OutfitsView: View {
     @Query private var styleSummaries: [StyleSummary]
     @Query(sort: \Tag.name) private var allTags: [Tag]
     @State private var viewModel = OutfitViewModel()
+    @State private var isShowingStyleModeOnboarding = false
     @Environment(\.modelContext) private var modelContext
     @Bindable var weatherViewModel: WeatherViewModel
     var styleViewModel: StyleViewModel
@@ -166,6 +167,22 @@ struct OutfitsView: View {
             styleViewModel.modelContext = modelContext
 
             viewModel.updateStyleContext(from: styleSummaries.first)
+
+            if let profile = profiles.first,
+               !profile.hasSeenStyleModeOnboarding,
+               !wardrobeItems.isEmpty {
+                isShowingStyleModeOnboarding = true
+            }
+        }
+        .sheet(isPresented: $isShowingStyleModeOnboarding) {
+            if let profile = profiles.first {
+                StyleModeOnboardingSheet(isPresented: $isShowingStyleModeOnboarding) { chosen in
+                    profile.styleMode = chosen
+                    profile.hasSeenStyleModeOnboarding = true
+                    profile.updatedAt = Date()
+                    try? modelContext.save()
+                }
+            }
         }
     }
 

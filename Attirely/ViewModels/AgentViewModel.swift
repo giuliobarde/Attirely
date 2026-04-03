@@ -306,7 +306,8 @@ class AgentViewModel {
                 availableTagNames: tagNames,
                 observationContext: observationPrompt,
                 itemRelevanceHints: relevanceHints,
-                mustIncludeItemIDs: mustIncludeIDStrings
+                mustIncludeItemIDs: mustIncludeIDStrings,
+                styleMode: userProfile?.styleMode
             )
 
             var createdOutfits: [Outfit] = []
@@ -724,6 +725,16 @@ class AgentViewModel {
         // Comfort preferences
         if let comfort = StyleContextHelper.comfortPreferencesString(from: userProfile) {
             prompt += "\n\nUSER COMFORT PREFERENCES:\n\(comfort)"
+        }
+
+        // Style mode
+        if let mode = userProfile?.styleMode {
+            switch mode {
+            case .improve:
+                prompt += "\n\nSTYLE MODE: Improve — when suggesting outfits or discussing style, favor polished and refined combinations over casual ones."
+            case .expand:
+                prompt += "\n\nSTYLE MODE: Expand — when suggesting outfits or discussing style, stay true to the user's detected personal aesthetic rather than pushing toward a conventional ideal."
+            }
         }
 
         // Style summary
