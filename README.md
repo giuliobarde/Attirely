@@ -32,6 +32,18 @@ Attirely is an iOS app that uses AI-powered vision to identify and analyze cloth
 - **Wardrobe analytics** — category composition (bar chart), formality breakdown (donut chart), and color distribution (swatch grid) powered by Swift Charts
 - **Brand design system** — centralized theme with Obsidian/Ivory/Stone/Champagne/Blush palette, reusable card/pill/tag modifiers, and consistent typography across all views
 
+## Version History
+
+| Version | Highlights |
+|---------|-----------|
+| **v0.8** | Scoped tagging system (outfit + item pools), agent intent detection, bulk item tagging |
+| **v0.9** | Siri & HomePod integration via in-app App Intents, template spoken summaries |
+| **v0.9.1** | Occasion-based outfit filtering with 10 OccasionTiers, wardrobe gap notes |
+| **v0.9.2** | SSE streaming, conversational outfit editing, agent chat as full-screen cover |
+| **v0.10** | Style intelligence: agent behavioral notes, item formality floor, relevance scoring, tier-based filtering |
+| **v0.10.1** | Three-mode agent toggle (Conversational / Direct / Last Used), item-anchored generation, in-chat mode switch |
+| **v0.10.2** | Outfit detection at scan time, "Use Existing" duplicate linking, footwear nudge |
+
 ## Setup
 
 1. Open the project in Xcode 26+

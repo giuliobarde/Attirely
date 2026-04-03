@@ -30,6 +30,7 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 ### Models (`Models/`)
 - SwiftData `@Model` classes for persistence; `Codable` DTOs for API parsing.
 - No business logic, no API calls, no UI code.
+- Key models: `ClothingItem`, `Outfit`, `UserProfile`, `StyleSummary`, `Tag`, `ScanSession`.
 - See `.claude/rules/models.md` for gotchas and DTO conventions.
 
 ### Services (`Services/`)
@@ -52,7 +53,8 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 - See `.claude/rules/views-and-theme.md` for theme system and UI conventions.
 
 ### Helpers (`Helpers/`)
-- Pure utility functions with no side effects. No state, no I/O.
+- Pure utility functions and domain helpers with no direct I/O.
+- Key helpers: `OccasionFilter` (tier-based filtering), `RelevanceScorer` (candidate scoring), `ObservationManager` (behavioral observation lifecycle), `OutfitLayerOrder` (layer sorting + warnings), `OutfitCompletenessValidator`, `TagManager`, `Theme`.
 
 ## Swift & Concurrency Conventions
 
