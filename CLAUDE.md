@@ -92,9 +92,45 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 - **No editing `.pbxproj` by hand.** File sync handles source files. Build settings go through Xcode's UI or `xcconfig` files.
 
 ## API Key
-- Read once from `Config.plist` at launch via `ConfigManager`.
-- If missing or empty, surface a clear error to the user — do not crash.
-- Never hardcode the key. Never log it. Never include it in error messages.
+- **Dev:** Read once from `Config.plist` at launch via `ConfigManager`. If missing or empty, surface a clear error — do not crash. Never hardcode. Never log. Never include in error messages.
+- **Production target:** API key moves to the Cloudflare Worker (see Backend section below). The app will send a device ID header instead; `ConfigManager` and `Config.plist` will be retired.
+
+## Backend — Cloudflare Worker (AI Proxy)
+
+Goal: prevent API key exposure and rate-limit AI requests per device. Auth/sync is out of scope for now.
+
+### Architecture
+- Worker sits between the app and `api.anthropic.com`
+- Anthropic key stored as a Wrangler secret — never in source or the app bundle
+- App sends a `X-Device-ID` header (UUID generated once, stored in Keychain)
+- Worker rate-limits by device ID using Cloudflare KV (e.g. 50 requests/day, daily TTL)
+- Worker returns 429 when limit exceeded
+
+### Endpoints
+- `POST /v1/messages` — forwards JSON and streaming requests verbatim to Anthropic
+- `GET /health` — health check
+
+### SSE Streaming
+- Worker must pipe the Anthropic SSE response back using `ReadableStream` / `TransformStream`
+- Do NOT buffer the full response — the app starts rendering tokens immediately
+- Test SSE end-to-end before adding rate limiting
+
+### iOS Changes (when proxy is ready)
+- `AnthropicService.apiURL` → Worker URL
+- Add `X-Device-ID` header (Keychain-stored UUID, generated at first launch)
+- Remove `x-api-key` header from requests
+- `ConfigManager` / `Config.plist` retired for key storage
+
+### Implementation Steps
+1. Scaffold Worker: `wrangler init attirely-proxy`
+2. Add secret: `wrangler secret put ANTHROPIC_API_KEY`
+3. Implement non-streaming proxy, deploy, test against app
+4. Implement SSE streaming passthrough, test against app
+5. Add KV-based rate limiting
+6. Update iOS `AnthropicService` to point at Worker URL + send device ID
+
+### Project Location
+Worker source lives in `/backend/` at the repo root (separate from the Xcode project).
 
 ## Version History
 - **v0.8** — Scoped tagging system (outfit + item pools), agent intent detection, bulk item tagging
@@ -121,7 +157,15 @@ After implementing a version milestone, update this `CLAUDE.md` and any relevant
 - Planned approach: generative AI to transform source photos into standardized flat-lay product images, then composite via category-based anchor points and z-ordering
 - New field: `flatLayImagePath: String?` on `ClothingItem`
 
+### v0.11b — Cloudflare Worker Proxy (pre-TestFlight security)
+- Cloudflare Worker proxies all Anthropic API calls
+- Anthropic key removed from app bundle entirely
+- Per-device rate limiting via Cloudflare KV
+- iOS `AnthropicService` updated to call Worker + send `X-Device-ID`
+- Designed to accept auth layer later without a rewrite
+
 ### Future Ideas
+- User auth + login (bolt onto Worker)
 - iCloud sync via SwiftData + CloudKit
 - Outfit calendar (what you wore when)
 - Share outfits

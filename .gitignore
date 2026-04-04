@@ -1,6 +1,9 @@
 # API Key config (contains secrets)
 **/Config.plist
 
+# Security audit (contains vulnerability details)
+SECURITY_AUDIT.md
+
 # Xcode
 build/
 DerivedData/
