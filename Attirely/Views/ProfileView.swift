@@ -309,6 +309,31 @@ struct ProfileView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
             }
+
+            if profile.styleMode == .improve {
+                Divider()
+
+                // Style Direction
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Style Direction")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+
+                    Picker("Style Direction", selection: Binding(
+                        get: { profile.styleDirection ?? .preppy },
+                        set: { viewModel.updateStyleDirection($0, profile: profile) }
+                    )) {
+                        ForEach(StyleDirection.allCases, id: \.self) { dir in
+                            Text(dir.displayName).tag(dir)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Text((profile.styleDirection ?? .preppy).tagline)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
             }
         }
     }

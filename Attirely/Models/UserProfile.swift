@@ -53,6 +53,84 @@ enum StyleModePreference: String, CaseIterable {
     case expand  = "Expand"
 }
 
+enum StyleDirection: String, CaseIterable {
+    case italian  = "italian"
+    case british  = "british"
+    case preppy   = "preppy"
+    case parisian = "parisian"
+    case oldMoney = "oldMoney"
+    case japanese = "japanese"
+
+    var displayName: String {
+        switch self {
+        case .italian:  "Classic Italian"
+        case .british:  "Classic British"
+        case .preppy:   "Preppy / Ivy"
+        case .parisian: "Parisian / French"
+        case .oldMoney: "Old Money / Quiet Luxury"
+        case .japanese: "Japanese / Scandinavian"
+        }
+    }
+
+    var tagline: String {
+        switch self {
+        case .italian:  "Effortless, slightly imperfect elegance."
+        case .british:  "Structured, understated, and built to last."
+        case .preppy:   "Collegiate and clean."
+        case .parisian: "Minimalist and quietly confident."
+        case .oldMoney: "Dressed as though the wardrobe was inherited, not bought."
+        case .japanese: "Precise, considered, and serene."
+        }
+    }
+
+    var promptDescription: String {
+        switch self {
+        case .italian:
+            """
+            STYLE DIRECTION — CLASSIC ITALIAN / NEAPOLITAN:
+            Effortless, slightly imperfect elegance. Think sprezzatura: a casually unbuttoned collar, \
+            a soft-shouldered Neapolitan suit worn with ease, tonal dressing with a single unexpected detail. \
+            Suggest combinations that feel considered but never stiff — dressed up, but as if it took no effort.
+            """
+        case .british:
+            """
+            STYLE DIRECTION — CLASSIC BRITISH:
+            Structured, understated, and built to last. Think Savile Row tailoring, heritage fabrics \
+            (tweed, flannel, hopsack), and restrained color palettes anchored by navy, grey, and brown. \
+            Suggest combinations that feel polished and traditional without being showy.
+            """
+        case .preppy:
+            """
+            STYLE DIRECTION — PREPPY / IVY:
+            Collegiate and clean. Think Oxford cloth button-downs, chinos, loafers, and layering with \
+            crewneck sweaters or sport coats. Color palettes lean toward pastels, madras, and bold solids. \
+            Suggest combinations that feel relaxed but put-together.
+            """
+        case .parisian:
+            """
+            STYLE DIRECTION — PARISIAN / FRENCH:
+            Minimalist and quietly confident. Think well-fitted basics in a tight color palette \
+            (navy, white, ecru, black), a Breton stripe, a perfectly draped overcoat. Nothing excessive, \
+            nothing missing. Suggest combinations that feel effortless through restraint — fewer pieces, better chosen.
+            """
+        case .oldMoney:
+            """
+            STYLE DIRECTION — OLD MONEY / QUIET LUXURY:
+            Dressed as though the wardrobe was inherited, not bought. Think muted earth tones, fine natural \
+            fabrics (cashmere, wool, linen), no visible logos, and nothing that looks new. Suggest combinations \
+            that feel expensive through quality and fit rather than anything flashy or trend-driven.
+            """
+        case .japanese:
+            """
+            STYLE DIRECTION — JAPANESE / SCANDINAVIAN TAILORING:
+            Precise, considered, and serene. Think clean silhouettes, impeccable fabric selection, subtle \
+            texture play, and a preference for neutral or monochromatic palettes with a single tonal accent. \
+            Suggest combinations where every detail feels intentional and nothing is excessive.
+            """
+        }
+    }
+}
+
 @Model
 final class UserProfile {
     @Attribute(.unique) var id: UUID
@@ -89,6 +167,7 @@ final class UserProfile {
 
     // Style mode
     var styleModeRaw: String = StyleModePreference.improve.rawValue
+    var styleDirectionRaw: String?
     var hasSeenStyleModeOnboarding: Bool = false
 
     var createdAt: Date
@@ -144,6 +223,11 @@ final class UserProfile {
     var styleMode: StyleModePreference {
         get { StyleModePreference(rawValue: styleModeRaw) ?? .improve }
         set { styleModeRaw = newValue.rawValue }
+    }
+
+    var styleDirection: StyleDirection? {
+        get { styleDirectionRaw.flatMap { StyleDirection(rawValue: $0) } }
+        set { styleDirectionRaw = newValue?.rawValue }
     }
 
     var selectedStylesArray: [String] {

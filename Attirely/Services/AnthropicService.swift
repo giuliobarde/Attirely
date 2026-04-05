@@ -470,7 +470,8 @@ struct AnthropicService {
         observationContext: String? = nil,
         itemRelevanceHints: [UUID: Double]? = nil,
         mustIncludeItemIDs: Set<String> = [],
-        styleMode: StyleModePreference? = nil
+        styleMode: StyleModePreference? = nil,
+        styleDirection: StyleDirection? = nil
     ) async throws -> [OutfitSuggestionDTO] {
         guard items.count >= 2 else {
             throw AnthropicError.insufficientWardrobe
@@ -511,13 +512,17 @@ struct AnthropicService {
             let styleModeText: String
             switch styleMode {
             case .improve:
-                styleModeText = """
+                var text = """
                 STYLE MODE — IMPROVE:
                 Steer this outfit toward polished, refined aesthetics (preppy, smart casual, business casual). \
                 Even if the wardrobe skews casual or eclectic, prioritize combinations that feel put-together \
                 and elevated. Avoid overly casual combinations when more polished options are available. \
                 Temperature sensitivity, layering preferences, and all comfort constraints above still take priority.
                 """
+                if let styleDirection {
+                    text += "\n\(styleDirection.promptDescription)"
+                }
+                styleModeText = text
             case .expand:
                 styleModeText = """
                 STYLE MODE — EXPAND:

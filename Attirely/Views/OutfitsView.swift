@@ -176,8 +176,9 @@ struct OutfitsView: View {
         }
         .sheet(isPresented: $isShowingStyleModeOnboarding) {
             if let profile = profiles.first {
-                StyleModeOnboardingSheet(isPresented: $isShowingStyleModeOnboarding) { chosen in
-                    profile.styleMode = chosen
+                StyleModeOnboardingSheet(isPresented: $isShowingStyleModeOnboarding) { chosenMode, chosenDirection in
+                    profile.styleMode = chosenMode
+                    profile.styleDirection = chosenDirection
                     profile.hasSeenStyleModeOnboarding = true
                     profile.updatedAt = Date()
                     try? modelContext.save()

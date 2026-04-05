@@ -307,7 +307,8 @@ class AgentViewModel {
                 observationContext: observationPrompt,
                 itemRelevanceHints: relevanceHints,
                 mustIncludeItemIDs: mustIncludeIDStrings,
-                styleMode: userProfile?.styleMode
+                styleMode: userProfile?.styleMode,
+                styleDirection: userProfile?.styleDirection
             )
 
             var createdOutfits: [Outfit] = []
@@ -731,7 +732,11 @@ class AgentViewModel {
         if let mode = userProfile?.styleMode {
             switch mode {
             case .improve:
-                prompt += "\n\nSTYLE MODE: Improve — when suggesting outfits or discussing style, favor polished and refined combinations over casual ones."
+                var hint = "\n\nSTYLE MODE: Improve — when suggesting outfits or discussing style, favor polished and refined combinations over casual ones."
+                if let direction = userProfile?.styleDirection {
+                    hint += " Style direction: \(direction.displayName)."
+                }
+                prompt += hint
             case .expand:
                 prompt += "\n\nSTYLE MODE: Expand — when suggesting outfits or discussing style, stay true to the user's detected personal aesthetic rather than pushing toward a conventional ideal."
             }

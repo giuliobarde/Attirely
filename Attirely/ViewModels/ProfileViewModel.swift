@@ -184,6 +184,12 @@ class ProfileViewModel {
         try? modelContext?.save()
     }
 
+    func updateStyleDirection(_ direction: StyleDirection, profile: UserProfile) {
+        profile.styleDirection = direction
+        profile.updatedAt = Date()
+        try? modelContext?.save()
+    }
+
     // MARK: - Style Summary
 
     func regenerateTemplateSummaryIfNeeded(profile: UserProfile) {
