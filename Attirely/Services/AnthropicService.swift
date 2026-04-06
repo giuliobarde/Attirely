@@ -616,6 +616,115 @@ struct AnthropicService {
         return suggestions
     }
 
+    // MARK: - Anchor Fresh Outfit Generation
+
+    private static let anchoredFreshOutfitPrompt = """
+    You are a personal stylist. Build a complete outfit around the anchor item described below.
+    For every piece OTHER than the anchor item, describe it as a structured suggestion — do not reference \
+    wardrobe IDs. If the anchor item is difficult to reconcile with the active style direction, note this \
+    briefly in the reasoning and do your best rather than ignoring the direction.
+
+    Return ONLY a single valid JSON object with this exact structure:
+    {
+      "name": "a short, evocative outfit name",
+      "occasion": "one of: Casual, Smart Casual, Business Casual, Business, Formal, Cocktail, Black Tie, White Tie, Gym/Athletic, Outdoor/Active",
+      "reasoning": "one sentence explaining why this works, including how the anchor item drives the look",
+      "suggested_items": [
+        {
+          "category": "one of: Top, Bottom, Outerwear, Footwear, Accessory, Full Body",
+          "color_and_fabric": "e.g. mid-grey wool flannel",
+          "cut_and_fit": "e.g. tapered, clean break at ankle",
+          "why_it_works": "one sentence on how it complements the anchor item"
+        }
+      ]
+    }
+
+    Rules:
+    - Suggest 2 to 5 additional pieces (not counting the anchor item)
+    - Include footwear unless the anchor IS footwear
+    - Keep the total look to 3–4 colors maximum
+    - Match formality level to the anchor item (unless occasion overrides)
+    - No markdown, no explanation, no code fences. Just the raw JSON object.
+    """
+
+    static func generateAnchoredFreshOutfit(
+        anchor: ClothingItem,
+        occasion: String?,
+        weatherContext: String? = nil,
+        styleSummary: String? = nil,
+        styleMode: StyleModePreference? = nil,
+        styleDirection: StyleDirection? = nil
+    ) async throws -> AnchoredFreshOutfitDTO {
+        let apiKey = try ConfigManager.apiKey()
+
+        var contextSection = ""
+
+        if let occasion {
+            contextSection += "Occasion: \(occasion)\n\n"
+        }
+
+        if let styleSummary {
+            contextSection += "USER STYLE PROFILE (use as guidance):\n\(styleSummary)\n\n"
+        }
+
+        if let styleMode {
+            let styleModeText: String
+            switch styleMode {
+            case .improve:
+                var text = """
+                STYLE MODE — IMPROVE:
+                Steer this outfit toward polished, refined aesthetics (preppy, smart casual, business casual). \
+                Even if the anchor item skews casual, prioritize suggestions that feel put-together and elevated. \
+                Temperature sensitivity and comfort constraints still take priority.
+                """
+                if let styleDirection {
+                    text += "\n\(styleDirection.promptDescription)"
+                }
+                styleModeText = text
+            case .expand:
+                styleModeText = """
+                STYLE MODE — EXPAND:
+                Infer the user's aesthetic from the anchor item's style signals. \
+                Generate suggestions consistent with and expressive of the direction the anchor item implies. \
+                Trust the style signals in the anchor rather than pushing toward a generic ideal.
+                """
+            }
+            contextSection += "\(styleModeText)\n\n"
+        }
+
+        if let weatherContext {
+            contextSection += "Current weather:\n\(weatherContext)\n\n"
+        }
+
+        var anchorLine = "Anchor item: \(anchor.type) | \(anchor.category) | \(anchor.primaryColor)"
+        if let secondary = anchor.secondaryColor { anchorLine += "/\(secondary)" }
+        anchorLine += " | \(anchor.pattern) | \(anchor.fabricEstimate) | \(anchor.formality)"
+        anchorLine += " | \(anchor.itemDescription)"
+
+        let fullPrompt = anchoredFreshOutfitPrompt + "\n\n" + contextSection + anchorLine
+
+        let requestBody: [String: Any] = [
+            "model": model,
+            "max_tokens": 2048,
+            "messages": [
+                ["role": "user", "content": fullPrompt]
+            ]
+        ]
+
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw AnthropicError.decodingError("Invalid text encoding.")
+        }
+
+        do {
+            return try JSONDecoder().decode(AnchoredFreshOutfitDTO.self, from: jsonData)
+        } catch {
+            throw AnthropicError.decodingError(error.localizedDescription)
+        }
+    }
+
     // MARK: - Style Analysis
 
     private static let styleAnalysisPrompt = """

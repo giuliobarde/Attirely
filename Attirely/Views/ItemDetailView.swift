@@ -6,6 +6,7 @@ struct ItemDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirmation = false
+    @State private var showAnchorBuilder = false
     @State private var affectedOutfits: [Outfit] = []
     @State private var itemTags: [Tag] = []
     @State private var isShowingTagPicker = false
@@ -15,6 +16,14 @@ struct ItemDetailView: View {
     @State private var isSeasonExpanded = false
     @State private var isTagsExpanded = false
     @State private var isNotesExpanded = false
+
+    @Query private var profiles: [UserProfile]
+    @Query private var styleSummaries: [StyleSummary]
+
+    private var userProfile: UserProfile? { profiles.first }
+    private var styleSummaryText: String? {
+        StyleContextHelper.styleContextString(from: styleSummaries.first)
+    }
 
     private let categories = ["Top", "Bottom", "Outerwear", "Footwear", "Accessory", "Full Body"]
     private let patterns = [
@@ -45,6 +54,7 @@ struct ItemDetailView: View {
                 seasonSection
                 tagsSection
                 notesSection
+                buildOutfitButton
                 deleteSection
             }
             .padding()
@@ -65,6 +75,13 @@ struct ItemDetailView: View {
         .onAppear { itemTags = item.tags }
         .sheet(isPresented: $isShowingTagPicker) {
             TagPickerSheet(selectedTags: $itemTags, scope: .item)
+        }
+        .sheet(isPresented: $showAnchorBuilder) {
+            AnchorOutfitBuilderView(
+                anchorItem: item,
+                userProfile: userProfile,
+                styleSummaryText: styleSummaryText
+            )
         }
         .confirmationDialog("Delete this item?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -343,6 +360,23 @@ struct ItemDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Build Outfit
+
+    private var buildOutfitButton: some View {
+        Button {
+            showAnchorBuilder = true
+        } label: {
+            HStack {
+                Spacer()
+                Label("Build an Outfit Around This", systemImage: "sparkles")
+                    .fontWeight(.semibold)
+                Spacer()
+            }
+        }
+        .buttonStyle(.themeSecondary)
+        .padding(.top, 4)
     }
 
     // MARK: - Delete

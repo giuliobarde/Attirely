@@ -140,6 +140,7 @@ Worker source lives in `/backend/` at the repo root (separate from the Xcode pro
 - **v0.10** — Style intelligence: agent behavioral notes, item formality floor, relevance scoring, tier-based filtering
 - **v0.10.1** — Conversational agent mode: three-state toggle (Conversational/Direct/Last Used), item-anchored generation via `must_include_items`, color/attribute-aware wardrobe exploration, in-chat mode toggle
 - **v0.10.2** — Outfit detection at scan time, "Use Existing" duplicate linking, footwear nudge
+- **v0.10.3** — "Build an Outfit Around This" anchor item feature: wardrobe mode (anchor forced in, gap suggestions inline) and start-fresh mode (Claude describes all pieces as text, inspiration-only). Entry point on `ItemDetailView`. New: `AnchoredFreshOutfitDTO`, `AnchorOutfitBuilderViewModel`, `AnchorOutfitBuilderView`, `AnthropicService.generateAnchoredFreshOutfit()`
 
 ## Roadmap
 
