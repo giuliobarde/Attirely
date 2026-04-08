@@ -5,6 +5,7 @@ struct AnchorOutfitBuilderView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: AnchorOutfitBuilderViewModel
+    @State private var expandedIndices: Set<Int> = []
 
     var weatherViewModel: WeatherViewModel?
     var userProfile: UserProfile?
@@ -12,8 +13,6 @@ struct AnchorOutfitBuilderView: View {
 
     @Query private var allItems: [ClothingItem]
     @Query private var allOutfits: [Outfit]
-
-    @State private var outfitSaved = false
 
     init(
         anchorItem: ClothingItem,
@@ -40,15 +39,14 @@ struct AnchorOutfitBuilderView: View {
                         Text(error)
                             .font(.subheadline)
                             .foregroundStyle(.red)
-                            .padding(.horizontal)
                     }
 
                     if viewModel.hasResult {
-                        resultSection
+                        outfitCardsSection
                     }
                 }
                 .padding()
-                .animation(.easeInOut(duration: 0.25), value: viewModel.hasResult)
+                .animation(.easeInOut(duration: 0.2), value: viewModel.hasResult)
             }
             .background(Theme.screenBackground)
             .navigationTitle("Build an Outfit")
@@ -143,11 +141,12 @@ struct AnchorOutfitBuilderView: View {
             .pickerStyle(.segmented)
             .onChange(of: viewModel.useWardrobe) {
                 viewModel.clearResult()
+                expandedIndices = []
             }
 
             Text(viewModel.useWardrobe
-                 ? "Claude fills the outfit from your wardrobe, with text suggestions for any gaps."
-                 : "Claude describes a complete outfit around this item — no wardrobe items referenced.")
+                 ? "Claude fills outfits from your wardrobe, with text suggestions for any gaps."
+                 : "Claude describes complete outfits around this item — no wardrobe items referenced.")
                 .font(.caption)
                 .foregroundStyle(Theme.secondaryText)
         }
@@ -204,14 +203,14 @@ struct AnchorOutfitBuilderView: View {
             if viewModel.isGenerating {
                 HStack {
                     Spacer()
-                    ProgressView("Building outfit…")
+                    ProgressView("Building outfits…")
                         .foregroundStyle(Theme.secondaryText)
                     Spacer()
                 }
                 .padding(.vertical, 8)
             } else {
                 Button {
-                    outfitSaved = false
+                    expandedIndices = []
                     viewModel.generate(
                         allItems: allItems,
                         userProfile: userProfile,
@@ -222,7 +221,7 @@ struct AnchorOutfitBuilderView: View {
                 } label: {
                     HStack {
                         Spacer()
-                        Label(viewModel.hasResult ? "Regenerate" : "Build Outfit", systemImage: "sparkles")
+                        Label(viewModel.hasResult ? "Regenerate" : "Build Outfits", systemImage: "sparkles")
                             .fontWeight(.semibold)
                         Spacer()
                     }
@@ -232,263 +231,224 @@ struct AnchorOutfitBuilderView: View {
         }
     }
 
-    // MARK: - Result Section
+    // MARK: - Outfit Cards
 
-    @ViewBuilder
-    private var resultSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+    private var outfitCardsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             Divider()
 
-            if viewModel.useWardrobe, let suggestion = viewModel.wardrobeOutfitSuggestion {
-                wardrobeResultSection(suggestion: suggestion)
-            } else if !viewModel.useWardrobe, let fresh = viewModel.freshOutfit {
-                freshResultSection(outfit: fresh)
+            ForEach(viewModel.generatedOutfits.indices, id: \.self) { index in
+                outfitCard(outfit: viewModel.generatedOutfits[index], index: index)
             }
         }
     }
 
-    // MARK: - Wardrobe Result
+    private func outfitCard(outfit: AnchorOutfitResultDTO, index: Int) -> some View {
+        let isExpanded = expandedIndices.contains(index)
 
-    private func wardrobeResultSection(suggestion: OutfitSuggestionDTO) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            outfitHeader(name: suggestion.name, occasion: suggestion.occasion, reasoning: suggestion.reasoning)
-
-            VStack(spacing: 10) {
-                ForEach(OutfitLayerOrder.sorted(viewModel.matchedWardrobeItems)) { item in
-                    wardrobeItemRow(item: item)
-                }
-            }
-
-            if !viewModel.gapSuggestions.isEmpty {
-                gapSuggestionsSection(gaps: viewModel.gapSuggestions)
-            }
-
-            if outfitSaved {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text("Outfit saved")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.primaryText)
-                }
-                .padding(.top, 4)
-            } else {
-                Button {
-                    viewModel.saveOutfit(
-                        modelContext: modelContext,
-                        weatherSnapshot: weatherViewModel?.snapshot
-                    )
-                    outfitSaved = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Label("Save Outfit", systemImage: "plus.circle")
-                            .fontWeight(.semibold)
-                        Spacer()
+        return VStack(alignment: .leading, spacing: 0) {
+            // Header row — always visible
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded {
+                        expandedIndices.remove(index)
+                    } else {
+                        expandedIndices.insert(index)
                     }
                 }
-                .buttonStyle(.themePrimary)
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(outfit.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Theme.primaryText)
+                            .multilineTextAlignment(.leading)
+
+                        Text(outfit.occasion)
+                            .font(.caption)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Theme.pillActiveBg)
+                            .foregroundStyle(Theme.pillActiveText)
+                            .clipShape(Capsule())
+                    }
+
+                    Spacer()
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .padding()
+            }
+            .buttonStyle(.plain)
+
+            // Expanded content
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+                        .padding(.horizontal)
+
+                    // Items
+                    VStack(spacing: 8) {
+                        ForEach(outfit.items.indices, id: \.self) { i in
+                            outfitItemRow(
+                                item: outfit.items[i],
+                                isAnchor: outfit.items[i].wardrobeItemId == viewModel.anchorItem.id.uuidString,
+                                candidates: viewModel.wardrobeCandidates
+                            )
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    // Styling note
+                    if let note = outfit.stylingNote, !note.isEmpty {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "lightbulb")
+                                .font(.caption)
+                                .foregroundStyle(Theme.champagne)
+                                .padding(.top, 1)
+                            Text(note)
+                                .font(.caption)
+                                .italic()
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                        .padding(.horizontal)
+                    }
+
+                    // Save button (wardrobe mode only)
+                    if viewModel.canSave(outfit) {
+                        if viewModel.savedIndices.contains(index) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Outfit saved")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.primaryText)
+                            }
+                            .padding(.horizontal)
+                        } else {
+                            Button {
+                                viewModel.saveOutfit(
+                                    at: index,
+                                    modelContext: modelContext,
+                                    weatherSnapshot: weatherViewModel?.snapshot
+                                )
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Label("Save Outfit", systemImage: "plus.circle")
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.themePrimary)
+                            .padding(.horizontal)
+                        }
+                    }
+                }
+                .padding(.bottom, 14)
             }
         }
+        .background(Theme.cardFill)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Theme.cardBorder, lineWidth: 0.5)
+        )
+        .shadow(color: Theme.obsidian.opacity(0.05), radius: 4, y: 2)
     }
 
-    private func wardrobeItemRow(item: ClothingItem) -> some View {
-        HStack(spacing: 12) {
-            let path = item.imagePath ?? item.sourceImagePath
-            if let path, let image = ImageStorageService.loadImage(relativePath: path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+    private func outfitItemRow(
+        item: AnchorOutfitResultDTO.Item,
+        isAnchor: Bool,
+        candidates: [ClothingItem]
+    ) -> some View {
+        let wardrobeItem = item.source == "wardrobe"
+            ? candidates.first(where: { $0.id.uuidString == item.wardrobeItemId })
+            : nil
+
+        return HStack(spacing: 12) {
+            // Thumbnail or category icon
+            if let wi = wardrobeItem {
+                let path = wi.imagePath ?? wi.sourceImagePath
+                if let path, let image = ImageStorageService.loadImage(relativePath: path) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                } else {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(Theme.placeholderFill)
+                        .frame(width: 48, height: 48)
+                        .overlay {
+                            Circle()
+                                .fill(ColorMapping.color(for: wi.primaryColor))
+                                .frame(width: 18, height: 18)
+                        }
+                }
             } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.placeholderFill)
-                    .frame(width: 56, height: 56)
+                // Suggested item — category placeholder
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(Theme.pillDefaultBg)
+                    .frame(width: 48, height: 48)
                     .overlay {
-                        Circle()
-                            .fill(ColorMapping.color(for: item.primaryColor))
-                            .frame(width: 20, height: 20)
+                        Image(systemName: categorySymbol(for: item.category))
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondaryText)
                     }
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
-                    if item.id == viewModel.anchorItem.id {
+                HStack(spacing: 5) {
+                    if isAnchor {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
                             .foregroundStyle(Theme.champagne)
                     }
-                    Text(item.type)
-                        .font(.subheadline)
+                    Text(item.description)
+                        .font(.caption)
                         .fontWeight(.medium)
                         .foregroundStyle(Theme.primaryText)
+                        .lineLimit(2)
                 }
 
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(ColorMapping.color(for: item.primaryColor))
-                        .frame(width: 10, height: 10)
-                        .overlay(Circle().stroke(Theme.border.opacity(0.5), lineWidth: 0.5))
-                    Text(item.primaryColor)
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondaryText)
-                }
-
-                Text(item.formality)
+                Text(item.whyItWorks)
                     .font(.caption2)
+                    .italic()
                     .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(2)
             }
 
-            Spacer()
-        }
-        .padding(12)
-        .background(Theme.cardFill)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Theme.cardBorder, lineWidth: 0.5)
-        )
-    }
+            Spacer(minLength: 0)
 
-    private func gapSuggestionsSection(gaps: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("To complete this look")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(Theme.champagne)
-                .textCase(.uppercase)
-                .tracking(0.5)
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(gaps, id: \.self) { gap in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "bag")
-                            .font(.caption)
-                            .foregroundStyle(Theme.champagne)
-                            .frame(width: 16)
-                            .padding(.top, 2)
-                        Text(gap)
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondaryText)
-                    }
-                }
-            }
-            .padding(12)
-            .background(Theme.cardFill)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Theme.cardBorder, lineWidth: 0.5)
-            )
-        }
-    }
-
-    // MARK: - Fresh Result
-
-    private func freshResultSection(outfit: AnchoredFreshOutfitDTO) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            outfitHeader(name: outfit.name, occasion: outfit.occasion, reasoning: outfit.reasoning)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Anchor")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Theme.champagne)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                HStack(spacing: 12) {
-                    anchorThumbnail
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(viewModel.anchorItem.type)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(Theme.primaryText)
-                        Text(viewModel.anchorItem.primaryColor)
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondaryText)
-                    }
-                    Spacer()
-                }
-                .padding(12)
-                .background(Theme.cardFill)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Theme.cardBorder, lineWidth: 0.5)
-                )
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Suggested Pieces")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Theme.secondaryText)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
-
-                ForEach(outfit.suggestedItems.indices, id: \.self) { index in
-                    suggestedItemCard(item: outfit.suggestedItems[index])
-                }
-            }
-        }
-    }
-
-    private func suggestedItemCard(item: AnchoredFreshOutfitDTO.SuggestedItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(item.category)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Theme.pillActiveBg)
-                .foregroundStyle(Theme.pillActiveText)
-                .clipShape(Capsule())
-
-            Text(item.colorAndFabric)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(Theme.primaryText)
-
-            Text(item.cutAndFit)
-                .font(.caption)
-                .foregroundStyle(Theme.secondaryText)
-
-            Text(item.whyItWorks)
-                .font(.caption)
-                .italic()
-                .foregroundStyle(Theme.secondaryText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Theme.cardFill)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Theme.cardBorder, lineWidth: 0.5)
-        )
-    }
-
-    // MARK: - Shared Header
-
-    private func outfitHeader(name: String, occasion: String, reasoning: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(name)
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(Theme.primaryText)
-                Spacer()
-                Text(occasion)
-                    .font(.caption)
-                    .foregroundStyle(Theme.champagne)
+            // Source badge
+            if item.source == "suggested" {
+                Text("Shop")
+                    .font(.caption2)
                     .fontWeight(.medium)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Theme.champagne.opacity(0.15))
+                    .foregroundStyle(Theme.champagne)
+                    .clipShape(Capsule())
             }
+        }
+        .padding(.vertical, 4)
+    }
 
-            Text(reasoning)
-                .font(.subheadline)
-                .foregroundStyle(Theme.secondaryText)
+    private func categorySymbol(for category: String) -> String {
+        switch category {
+        case "Top":        return "tshirt"
+        case "Bottom":     return "rectangle.portrait"
+        case "Outerwear":  return "cloud.drizzle"
+        case "Footwear":   return "shoe"
+        case "Accessory":  return "sparkle"
+        case "Full Body":  return "person"
+        default:           return "hanger"
         }
     }
 }

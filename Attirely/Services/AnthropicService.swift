@@ -616,51 +616,67 @@ struct AnthropicService {
         return suggestions
     }
 
-    // MARK: - Anchor Fresh Outfit Generation
+    // MARK: - Anchor Outfit Generation
 
-    private static let anchoredFreshOutfitPrompt = """
-    You are a personal stylist. Build a complete outfit around the anchor item described below.
-    For every piece OTHER than the anchor item, describe it as a structured suggestion — do not reference \
-    wardrobe IDs. If the anchor item is difficult to reconcile with the active style direction, note this \
-    briefly in the reasoning and do your best rather than ignoring the direction.
+    private static let anchoredOutfitPrompt = """
+    You are a personal stylist. Generate 1 to 4 complete outfits built around the anchor item described below.
 
-    Return ONLY a single valid JSON object with this exact structure:
-    {
-      "name": "a short, evocative outfit name",
-      "occasion": "one of: Casual, Smart Casual, Business Casual, Business, Formal, Cocktail, Black Tie, White Tie, Gym/Athletic, Outdoor/Active",
-      "reasoning": "one sentence explaining why this works, including how the anchor item drives the look",
-      "suggested_items": [
-        {
-          "category": "one of: Top, Bottom, Outerwear, Footwear, Accessory, Full Body",
-          "color_and_fabric": "e.g. mid-grey wool flannel",
-          "cut_and_fit": "e.g. tapered, clean break at ankle",
-          "why_it_works": "one sentence on how it complements the anchor item"
-        }
-      ]
-    }
+    COUNT GUIDANCE — choose the number based on these signals:
+    - Item versatility: basics (white shirt, navy trouser) support more combinations than single-use items \
+    (tuxedo jacket, ski vest). A versatile anchor can support 3–4 outfits; a single-use item may only support 1.
+    - Statement level: bold color, unusual texture, or loud pattern limits coherent combinations — generate \
+    fewer outfits rather than forcing weak suggestions.
+    - Wardrobe depth (when wardrobe items are provided): if the wardrobe is sparse or mismatched for this \
+    anchor, generate fewer outfits. If it supports both casual and formal pairings, use that range.
+    RULE: never generate an outfit just to hit a higher number. Fewer strong outfits beat more weak ones.
+
+    Each outfit item must specify its source:
+    - "wardrobe": an item from the provided wardrobe list — set wardrobe_item_id to the exact ID from the list
+    - "suggested": a recommended item the user doesn't own — set wardrobe_item_id to null, and write a \
+    specific description (color, fabric, cut)
+
+    If no wardrobe list is provided, all non-anchor items must be "suggested".
+    The anchor item itself should always appear as an item in each outfit.
+
+    If the anchor item is difficult to reconcile with the active style direction, note this briefly in the \
+    styling_note rather than ignoring the direction silently.
+
+    Return ONLY a valid JSON array. Each element must have:
+    - "title": a descriptive label, e.g. "Smart Casual — Weekend Lunch"
+    - "occasion": one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal", "Cocktail", \
+    "Black Tie", "White Tie", "Gym/Athletic", "Outdoor/Active"
+    - "items": array of outfit pieces, each with:
+        - "source": "wardrobe" or "suggested"
+        - "wardrobe_item_id": string UUID or null
+        - "category": one of "Top", "Bottom", "Outerwear", "Footwear", "Accessory", "Full Body"
+        - "description": item description — for wardrobe items restate the type and color; for suggested \
+    items be specific (color, fabric, cut)
+        - "why_it_works": one sentence on how it complements the anchor item
+    - "styling_note": one optional tip on how to wear the full look (e.g. tuck, roll, layer). Can be null.
 
     Rules:
-    - Suggest 2 to 5 additional pieces (not counting the anchor item)
-    - Include footwear unless the anchor IS footwear
-    - Keep the total look to 3–4 colors maximum
-    - Match formality level to the anchor item (unless occasion overrides)
-    - No markdown, no explanation, no code fences. Just the raw JSON object.
+    - Each outfit must have 3–6 items total (including the anchor)
+    - Include footwear in each outfit unless the anchor IS footwear
+    - Keep total look to 3–4 colors
+    - Keep formality consistent within each outfit (unless occasion overrides)
+    - No markdown, no explanation, no code fences. Just the raw JSON array.
     """
 
-    static func generateAnchoredFreshOutfit(
+    static func generateAnchoredOutfits(
         anchor: ClothingItem,
+        wardrobeItems: [ClothingItem],
         occasion: String?,
         weatherContext: String? = nil,
         styleSummary: String? = nil,
         styleMode: StyleModePreference? = nil,
         styleDirection: StyleDirection? = nil
-    ) async throws -> AnchoredFreshOutfitDTO {
+    ) async throws -> [AnchorOutfitResultDTO] {
         let apiKey = try ConfigManager.apiKey()
 
         var contextSection = ""
 
         if let occasion {
-            contextSection += "Occasion: \(occasion)\n\n"
+            contextSection += "Occasion constraint: \(occasion)\n\n"
         }
 
         if let styleSummary {
@@ -673,9 +689,9 @@ struct AnthropicService {
             case .improve:
                 var text = """
                 STYLE MODE — IMPROVE:
-                Steer this outfit toward polished, refined aesthetics (preppy, smart casual, business casual). \
+                Steer outfits toward polished, refined aesthetics (preppy, smart casual, business casual). \
                 Even if the anchor item skews casual, prioritize suggestions that feel put-together and elevated. \
-                Temperature sensitivity and comfort constraints still take priority.
+                Comfort constraints still take priority.
                 """
                 if let styleDirection {
                     text += "\n\(styleDirection.promptDescription)"
@@ -685,8 +701,8 @@ struct AnthropicService {
                 styleModeText = """
                 STYLE MODE — EXPAND:
                 Infer the user's aesthetic from the anchor item's style signals. \
-                Generate suggestions consistent with and expressive of the direction the anchor item implies. \
-                Trust the style signals in the anchor rather than pushing toward a generic ideal.
+                Generate suggestions consistent with and expressive of that direction. \
+                Trust the anchor's style signals rather than pushing toward a generic ideal.
                 """
             }
             contextSection += "\(styleModeText)\n\n"
@@ -696,16 +712,29 @@ struct AnthropicService {
             contextSection += "Current weather:\n\(weatherContext)\n\n"
         }
 
-        var anchorLine = "Anchor item: \(anchor.type) | \(anchor.category) | \(anchor.primaryColor)"
+        // Anchor item
+        var anchorLine = "ANCHOR ITEM:\n"
+        anchorLine += "- id:\(anchor.id.uuidString) | \(anchor.type) | \(anchor.category) | \(anchor.primaryColor)"
         if let secondary = anchor.secondaryColor { anchorLine += "/\(secondary)" }
-        anchorLine += " | \(anchor.pattern) | \(anchor.fabricEstimate) | \(anchor.formality)"
-        anchorLine += " | \(anchor.itemDescription)"
+        anchorLine += " | \(anchor.pattern) | \(anchor.fabricEstimate) | \(anchor.statementLevel) statement"
+        anchorLine += " | \(anchor.formality) | \(anchor.itemDescription)"
 
-        let fullPrompt = anchoredFreshOutfitPrompt + "\n\n" + contextSection + anchorLine
+        // Wardrobe items (when present)
+        var wardrobeSection = ""
+        if !wardrobeItems.isEmpty {
+            wardrobeSection = "\n\nAVAILABLE WARDROBE ITEMS (use wardrobe_item_id from these IDs):\n"
+            for item in wardrobeItems where item.id != anchor.id {
+                wardrobeSection += "- id:\(item.id.uuidString) | \(item.type) | \(item.category) | \(item.primaryColor)"
+                if let secondary = item.secondaryColor { wardrobeSection += "/\(secondary)" }
+                wardrobeSection += " | \(item.fabricEstimate) | \(item.formality)\n"
+            }
+        }
+
+        let fullPrompt = anchoredOutfitPrompt + "\n\n" + contextSection + anchorLine + wardrobeSection
 
         let requestBody: [String: Any] = [
             "model": model,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "messages": [
                 ["role": "user", "content": fullPrompt]
             ]
@@ -719,7 +748,9 @@ struct AnthropicService {
         }
 
         do {
-            return try JSONDecoder().decode(AnchoredFreshOutfitDTO.self, from: jsonData)
+            let outfits = try JSONDecoder().decode([AnchorOutfitResultDTO].self, from: jsonData)
+            if outfits.isEmpty { throw AnthropicError.emptyResults }
+            return outfits
         } catch {
             throw AnthropicError.decodingError(error.localizedDescription)
         }

@@ -13,25 +13,23 @@ class AnchorOutfitBuilderViewModel {
     var isGenerating: Bool = false
     var errorMessage: String? = nil
 
-    // "Use wardrobe" result
-    var wardrobeOutfitSuggestion: OutfitSuggestionDTO? = nil
-    var matchedWardrobeItems: [ClothingItem] = []
-    var gapSuggestions: [String] = []
+    // Results
+    var generatedOutfits: [AnchorOutfitResultDTO] = []
+    // Wardrobe candidates retained for UUID → ClothingItem lookup and saving
+    var wardrobeCandidates: [ClothingItem] = []
+    // Tracks which outfit indices have been saved (wardrobe mode only)
+    var savedIndices: Set<Int> = []
 
-    // "Start fresh" result
-    var freshOutfit: AnchoredFreshOutfitDTO? = nil
-
-    var hasResult: Bool { wardrobeOutfitSuggestion != nil || freshOutfit != nil }
+    var hasResult: Bool { !generatedOutfits.isEmpty }
 
     init(anchorItem: ClothingItem) {
         self.anchorItem = anchorItem
     }
 
     func clearResult() {
-        wardrobeOutfitSuggestion = nil
-        matchedWardrobeItems = []
-        gapSuggestions = []
-        freshOutfit = nil
+        generatedOutfits = []
+        wardrobeCandidates = []
+        savedIndices = []
         errorMessage = nil
     }
 
@@ -45,118 +43,39 @@ class AnchorOutfitBuilderViewModel {
         isGenerating = true
         clearResult()
 
+        var candidateItems: [ClothingItem] = []
+
         if useWardrobe {
-            generateUsingWardrobe(
-                allItems: allItems,
-                userProfile: userProfile,
-                weatherContext: weatherContext,
-                styleSummary: styleSummary,
-                existingOutfits: existingOutfits
+            // Filter and score wardrobe candidates
+            let filterResult = OccasionFilter.filterItems(allItems, for: selectedOccasionTier)
+            let scorerConfig = RelevanceScorerConfig(
+                occasion: selectedOccasionTier,
+                season: nil,
+                currentTemp: nil,
+                observations: [],
+                allOutfits: existingOutfits
             )
-        } else {
-            generateFresh(
-                userProfile: userProfile,
-                weatherContext: weatherContext,
-                styleSummary: styleSummary
-            )
-        }
-    }
-
-    private func generateUsingWardrobe(
-        allItems: [ClothingItem],
-        userProfile: UserProfile?,
-        weatherContext: String?,
-        styleSummary: String?,
-        existingOutfits: [Outfit]
-    ) {
-        // Apply occasion-based filtering
-        let filterResult = OccasionFilter.filterItems(allItems, for: selectedOccasionTier)
-        let filterContext = OccasionFilter.buildFilterContext(from: filterResult)
-
-        // Score candidates
-        let scorerConfig = RelevanceScorerConfig(
-            occasion: selectedOccasionTier,
-            season: nil,
-            currentTemp: nil,
-            observations: [],
-            allOutfits: existingOutfits
-        )
-        var scoredItems = RelevanceScorer.selectCandidates(from: filterResult.items, config: scorerConfig)
-
-        // Always ensure anchor item is in the candidate list
-        let anchorID = anchorItem.id
-        if !scoredItems.contains(where: { $0.item.id == anchorID }) {
-            scoredItems.append(ScoredItem(item: anchorItem, score: 1.0))
-        }
-
-        let candidateItems = scoredItems.map(\.item)
-        var relevanceHints = Dictionary(uniqueKeysWithValues: scoredItems.map { ($0.item.id, $0.score) })
-        relevanceHints[anchorID] = 1.0
-
-        let existingItemSets = existingOutfits.map { outfit in
-            outfit.items.map { $0.id.uuidString }.sorted()
-        }
-
-        let mustInclude: Set<String> = [anchorID.uuidString]
-
-        Task {
-            do {
-                let suggestions = try await AnthropicService.generateOutfits(
-                    from: candidateItems,
-                    occasion: selectedOccasionTier?.rawValue,
-                    season: nil,
-                    weatherContext: weatherContext,
-                    comfortPreferences: StyleContextHelper.comfortPreferencesString(from: userProfile),
-                    styleSummary: styleSummary,
-                    filterContext: filterContext,
-                    existingOutfitItemSets: existingItemSets,
-                    availableTagNames: [],
-                    observationContext: nil,
-                    itemRelevanceHints: relevanceHints,
-                    mustIncludeItemIDs: mustInclude,
-                    styleMode: userProfile?.styleMode,
-                    styleDirection: userProfile?.styleDirection
-                )
-
-                guard let suggestion = suggestions.first else {
-                    self.errorMessage = "No outfit could be generated. Try a different occasion or add more items."
-                    self.isGenerating = false
-                    return
-                }
-
-                let matched = candidateItems.filter { suggestion.itemIDs.contains($0.id.uuidString) }
-                guard matched.count >= min(3, suggestion.itemIDs.count) else {
-                    self.errorMessage = "AI suggested items that couldn't be matched. Try again."
-                    self.isGenerating = false
-                    return
-                }
-
-                self.wardrobeOutfitSuggestion = suggestion
-                self.matchedWardrobeItems = matched
-                self.gapSuggestions = suggestion.wardrobeGaps
-            } catch {
-                self.errorMessage = error.localizedDescription
+            var scored = RelevanceScorer.selectCandidates(from: filterResult.items, config: scorerConfig)
+            // Always include anchor even if filtered out
+            if !scored.contains(where: { $0.item.id == anchorItem.id }) {
+                scored.append(ScoredItem(item: anchorItem, score: 1.0))
             }
-            self.isGenerating = false
+            candidateItems = scored.map(\.item)
+            wardrobeCandidates = candidateItems
         }
-    }
 
-    private func generateFresh(
-        userProfile: UserProfile?,
-        weatherContext: String?,
-        styleSummary: String?
-    ) {
         Task {
             do {
-                let result = try await AnthropicService.generateAnchoredFreshOutfit(
+                let results = try await AnthropicService.generateAnchoredOutfits(
                     anchor: anchorItem,
+                    wardrobeItems: candidateItems,
                     occasion: selectedOccasionTier?.rawValue,
                     weatherContext: weatherContext,
                     styleSummary: styleSummary,
                     styleMode: userProfile?.styleMode,
                     styleDirection: userProfile?.styleDirection
                 )
-                self.freshOutfit = result
+                self.generatedOutfits = results
             } catch {
                 self.errorMessage = error.localizedDescription
             }
@@ -164,15 +83,33 @@ class AnchorOutfitBuilderViewModel {
         }
     }
 
-    func saveOutfit(modelContext: ModelContext, weatherSnapshot: WeatherSnapshot?) {
-        guard let suggestion = wardrobeOutfitSuggestion, !matchedWardrobeItems.isEmpty else { return }
+    func wardrobeItems(for outfit: AnchorOutfitResultDTO) -> [ClothingItem] {
+        outfit.items.compactMap { item in
+            guard item.source == "wardrobe", let idString = item.wardrobeItemId else { return nil }
+            return wardrobeCandidates.first { $0.id.uuidString == idString }
+        }
+    }
+
+    func canSave(_ outfit: AnchorOutfitResultDTO) -> Bool {
+        useWardrobe && !wardrobeItems(for: outfit).isEmpty
+    }
+
+    func saveOutfit(
+        at index: Int,
+        modelContext: ModelContext,
+        weatherSnapshot: WeatherSnapshot?
+    ) {
+        guard index < generatedOutfits.count else { return }
+        let result = generatedOutfits[index]
+        let items = wardrobeItems(for: result)
+        guard !items.isEmpty else { return }
 
         let outfit = Outfit(
-            name: suggestion.name,
-            occasion: suggestion.occasion,
-            reasoning: suggestion.reasoning,
+            name: result.title,
+            occasion: result.occasion,
+            reasoning: result.stylingNote,
             isAIGenerated: true,
-            items: matchedWardrobeItems
+            items: items
         )
 
         if let snapshot = weatherSnapshot {
@@ -181,11 +118,8 @@ class AnchorOutfitBuilderViewModel {
         }
         outfit.monthAtCreation = Calendar.current.component(.month, from: Date())
 
-        if !gapSuggestions.isEmpty {
-            outfit.wardrobeGaps = Outfit.encodeGaps(gapSuggestions)
-        }
-
         modelContext.insert(outfit)
         try? modelContext.save()
+        savedIndices.insert(index)
     }
 }
