@@ -8,6 +8,7 @@ enum AgentToolName: String {
     case searchOutfits
     case updateStyleInsight
     case editOutfit
+    case suggestPurchases
 }
 
 // MARK: - Parsed Tool Call (from Claude response)
@@ -89,6 +90,14 @@ struct EditOutfitInput {
         self.addItems = (json["add_items"] as? [String]) ?? []
         self.newName = json["new_name"] as? String
         self.newOccasion = json["new_occasion"] as? String
+    }
+}
+
+struct SuggestPurchasesInput {
+    let category: String?
+
+    init(from json: [String: Any]) {
+        self.category = json["category"] as? String
     }
 }
 

@@ -138,6 +138,7 @@ struct AgentView: View {
                     VStack(spacing: 10) {
                         starterButton("What should I wear today?")
                         starterButton("Suggest a casual weekend outfit")
+                        starterButton("What should I buy?")
                         starterButton("What's missing from my wardrobe?")
                         starterButton("Show me my formal pieces")
                     }
@@ -190,6 +191,9 @@ struct AgentView: View {
                             },
                             itemsForOutfit: { outfit in
                                 viewModel.displayItems(for: outfit)
+                            },
+                            onBuildOutfitAround: { description in
+                                viewModel.sendStarterMessage("Style an outfit around: \(description)")
                             }
                         )
                         .id(message.id)

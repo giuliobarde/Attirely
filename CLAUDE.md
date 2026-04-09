@@ -141,6 +141,7 @@ Worker source lives in `/backend/` at the repo root (separate from the Xcode pro
 - **v0.10.1** — Conversational agent mode: three-state toggle (Conversational/Direct/Last Used), item-anchored generation via `must_include_items`, color/attribute-aware wardrobe exploration, in-chat mode toggle
 - **v0.10.2** — Outfit detection at scan time, "Use Existing" duplicate linking, footwear nudge
 - **v0.10.3** — "Build an Outfit Around This" anchor item feature: wardrobe and start-fresh modes, multi-outfit generation (1–4, Claude-determined), collapsible outfit cards. Entry point on `ItemDetailView`. New: `AnchorOutfitResultDTO`, `AnchorOutfitBuilderViewModel`, `AnchorOutfitBuilderView`, `AnthropicService.generateAnchoredOutfits()`
+- **v0.10.4** — "What should I buy?" agent quick option: new `suggestPurchases` tool, `PurchaseSuggestionDTO`, `AnthropicService.suggestPurchases()`. Purchase cards in `AgentMessageBubble` with compatibility count, pairs-with list, and "Style an outfit around this" pipe-in button
 
 ## Roadmap
 

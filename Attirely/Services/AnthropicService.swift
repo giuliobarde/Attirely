@@ -756,6 +756,109 @@ struct AnthropicService {
         }
     }
 
+    // MARK: - Purchase Suggestions
+
+    private static let purchaseSuggestionPrompt = """
+    You are a personal stylist advising on wardrobe purchases. Based on the user's existing wardrobe \
+    and active style direction, suggest 2 to 3 new clothing items they could buy to fill gaps or \
+    unlock more outfit combinations.
+
+    RULES:
+    - Prioritize items that pair with the MOST existing wardrobe items (wardrobe_compatibility_count).
+    - Verify internally that each suggestion pairs with at least 2 existing items before including it. \
+    If the wardrobe has fewer than 4 items, relax this requirement and note it in style_note.
+    - If a category is requested, focus on that. Otherwise pick the category with the most impact.
+    - If the user already has the requested category well covered, flag it in style_note and either \
+    suggest a meaningful variation or recommend a more impactful category.
+    - Suggestions that conflict with the active style direction should not be included.
+    - If the anchor category is hard to reconcile with the style direction, note this briefly in style_note.
+    - Order suggestions by wardrobe_compatibility_count descending — most versatile first.
+
+    Return ONLY a valid JSON object with this structure:
+    {
+      "suggestions": [
+        {
+          "category": "e.g. Trousers",
+          "description": "specific and visual — color, fabric, cut (e.g. Slim-fit navy cotton twill trousers)",
+          "style_note": "why it fits the user's style direction and fills a real gap",
+          "pairs_with": ["brief description of existing items it works with"],
+          "wardrobe_compatibility_count": 6
+        }
+      ]
+    }
+
+    No markdown, no explanation, no code fences. Just the raw JSON object.
+    """
+
+    static func suggestPurchases(
+        wardrobeItems: [ClothingItem],
+        category: String?,
+        styleSummary: String? = nil,
+        styleMode: StyleModePreference? = nil,
+        styleDirection: StyleDirection? = nil
+    ) async throws -> [PurchaseSuggestionDTO] {
+        let apiKey = try ConfigManager.apiKey()
+
+        var contextSection = ""
+
+        if let category {
+            contextSection += "Requested category: \(category)\n\n"
+        }
+
+        if let styleSummary {
+            contextSection += "USER STYLE PROFILE:\n\(styleSummary)\n\n"
+        }
+
+        if let styleMode {
+            switch styleMode {
+            case .improve:
+                var text = "STYLE MODE — IMPROVE: Prioritize polished, refined items."
+                if let styleDirection {
+                    text += "\n\(styleDirection.promptDescription)"
+                }
+                contextSection += "\(text)\n\n"
+            case .expand:
+                contextSection += "STYLE MODE — EXPAND: Stay true to the user's detected aesthetic.\n\n"
+            }
+        }
+
+        // Format wardrobe as compact list (no UUIDs needed)
+        var wardrobeSection = "EXISTING WARDROBE (\(wardrobeItems.count) items):\n"
+        for item in wardrobeItems {
+            wardrobeSection += "- \(item.type) | \(item.category) | \(item.primaryColor)"
+            if let secondary = item.secondaryColor { wardrobeSection += "/\(secondary)" }
+            wardrobeSection += " | \(item.fabricEstimate) | \(item.formality)\n"
+        }
+
+        let fullPrompt = purchaseSuggestionPrompt + "\n\n" + contextSection + wardrobeSection
+
+        let requestBody: [String: Any] = [
+            "model": model,
+            "max_tokens": 2048,
+            "messages": [
+                ["role": "user", "content": fullPrompt]
+            ]
+        ]
+
+        let text = try await sendRequest(body: requestBody, apiKey: apiKey)
+        let cleanedText = stripCodeFences(text)
+
+        guard let jsonData = cleanedText.data(using: .utf8) else {
+            throw AnthropicError.decodingError("Invalid text encoding.")
+        }
+
+        struct Wrapper: Decodable {
+            let suggestions: [PurchaseSuggestionDTO]
+        }
+
+        do {
+            let wrapper = try JSONDecoder().decode(Wrapper.self, from: jsonData)
+            return wrapper.suggestions
+        } catch {
+            throw AnthropicError.decodingError(error.localizedDescription)
+        }
+    }
+
     // MARK: - Style Analysis
 
     private static let styleAnalysisPrompt = """

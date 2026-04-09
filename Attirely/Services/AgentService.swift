@@ -220,6 +220,30 @@ struct AgentService {
                 ],
                 "required": ["outfit_name"]
             ]
+        ],
+        [
+            "name": "suggestPurchases",
+            "description": """
+                Suggest new clothing items the user could buy to fill wardrobe gaps or strengthen \
+                their style. Call this when the user asks what they should buy, what's worth adding, \
+                what would fill a gap, or what new piece would unlock more outfit combinations. \
+                Returns 2–3 specific, purchasable item suggestions ordered by how many owned items \
+                they pair with.
+                """,
+            "input_schema": [
+                "type": "object",
+                "properties": [
+                    "category": [
+                        "type": "string",
+                        "description": """
+                            Optional specific category to focus on (e.g. 'Trousers', 'Jacket', 'Top', \
+                            'Footwear'). If omitted, Claude picks the category with the most impact \
+                            based on wardrobe gaps.
+                            """
+                    ]
+                ],
+                "required": [] as [String]
+            ]
         ]
     ]
 }

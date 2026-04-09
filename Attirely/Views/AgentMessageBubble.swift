@@ -6,6 +6,7 @@ struct AgentMessageBubble: View {
     let onSaveOutfit: (Outfit) -> Void
     let onItemTap: (ClothingItem) -> Void
     var itemsForOutfit: ((Outfit) -> [ClothingItem])? = nil
+    var onBuildOutfitAround: ((String) -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -104,7 +105,100 @@ struct AgentMessageBubble: View {
                 .background(Theme.champagne.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
+
+            // Purchase suggestions
+            if !message.purchaseSuggestions.isEmpty {
+                purchaseSuggestionList
+            }
         }
+    }
+
+    // MARK: - Purchase Suggestions
+
+    private var purchaseSuggestionList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(message.purchaseSuggestions) { suggestion in
+                purchaseSuggestionCard(suggestion)
+            }
+        }
+    }
+
+    private func purchaseSuggestionCard(_ suggestion: PurchaseSuggestionDTO) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Category + compatibility count
+            HStack {
+                Text(suggestion.category)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Theme.pillActiveBg)
+                    .foregroundStyle(Theme.pillActiveText)
+                    .clipShape(Capsule())
+
+                Spacer()
+
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.champagne)
+                    Text("Pairs with \(suggestion.wardrobeCompatibilityCount)")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+            }
+
+            // Description
+            Text(suggestion.description)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(Theme.primaryText)
+
+            // Style note
+            Text(suggestion.styleNote)
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+
+            // Pairs with list
+            if !suggestion.pairsWith.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Works with:")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.secondaryText)
+                    ForEach(suggestion.pairsWith.prefix(4), id: \.self) { item in
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(Theme.champagne.opacity(0.5))
+                                .frame(width: 4, height: 4)
+                            Text(item)
+                                .font(.caption2)
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    }
+                }
+            }
+
+            // Pipe-in button
+            if let onBuildOutfitAround {
+                Button {
+                    onBuildOutfitAround(suggestion.description)
+                } label: {
+                    Label("Style an outfit around this", systemImage: "arrow.right.circle")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Theme.champagne)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(Theme.cardFill)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Theme.cardBorder, lineWidth: 0.5)
+        )
     }
 
     // MARK: - Streaming Indicator

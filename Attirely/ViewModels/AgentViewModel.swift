@@ -184,30 +184,44 @@ class AgentViewModel {
                 var outfits: [Outfit] = []
                 var foundItems: [ClothingItem] = []
                 var insightNote: String?
+                var purchaseSuggestions: [PurchaseSuggestionDTO] = []
 
                 for call in toolCalls {
-                    let (resultContent, toolOutfits, toolItems, toolInsight) = await executeTool(call)
-                    toolResultBlocks.append([
-                        "type": "tool_result",
-                        "tool_use_id": call.toolUseID,
-                        "content": resultContent
-                    ])
-                    outfits.append(contentsOf: toolOutfits)
-                    foundItems.append(contentsOf: toolItems)
-                    if let note = toolInsight { insightNote = note }
+                    if call.name == .suggestPurchases {
+                        let (resultContent, suggestions) = await executeSuggestPurchases(
+                            SuggestPurchasesInput(from: call.inputJSON)
+                        )
+                        toolResultBlocks.append([
+                            "type": "tool_result",
+                            "tool_use_id": call.toolUseID,
+                            "content": resultContent
+                        ])
+                        purchaseSuggestions.append(contentsOf: suggestions)
+                    } else {
+                        let (resultContent, toolOutfits, toolItems, toolInsight) = await executeTool(call)
+                        toolResultBlocks.append([
+                            "type": "tool_result",
+                            "tool_use_id": call.toolUseID,
+                            "content": resultContent
+                        ])
+                        outfits.append(contentsOf: toolOutfits)
+                        foundItems.append(contentsOf: toolItems)
+                        if let note = toolInsight { insightNote = note }
+                    }
                 }
 
                 // Append tool results as user message in history
                 history.append(["role": "user", "content": toolResultBlocks])
 
                 // Update streaming message with intermediate tool results
-                if !outfits.isEmpty || !foundItems.isEmpty || insightNote != nil {
+                if !outfits.isEmpty || !foundItems.isEmpty || insightNote != nil || !purchaseSuggestions.isEmpty {
                     updateStreamingMessage(
                         streamingID: streamingID,
                         text: nil,
                         outfits: outfits,
                         wardrobeItems: foundItems,
-                        insightNote: insightNote
+                        insightNote: insightNote,
+                        purchaseSuggestions: purchaseSuggestions
                     )
                 }
             }
@@ -235,6 +249,8 @@ class AgentViewModel {
             return executeUpdateStyleInsight(UpdateStyleInsightInput(from: call.inputJSON))
         case .editOutfit:
             return executeEditOutfit(EditOutfitInput(from: call.inputJSON))
+        case .suggestPurchases:
+            return ("suggestPurchases is handled separately.", [], [], nil)
         }
     }
 
@@ -580,6 +596,37 @@ class AgentViewModel {
         return (summary, [], [], nil)
     }
 
+    private func executeSuggestPurchases(_ input: SuggestPurchasesInput) async -> (String, [PurchaseSuggestionDTO]) {
+        guard !wardrobeItems.isEmpty else {
+            return ("The user's wardrobe is empty. Ask them to add some items first before suggesting purchases.", [])
+        }
+
+        do {
+            let suggestions = try await AnthropicService.suggestPurchases(
+                wardrobeItems: wardrobeItems,
+                category: input.category,
+                styleSummary: styleSummaryText,
+                styleMode: userProfile?.styleMode,
+                styleDirection: userProfile?.styleDirection
+            )
+
+            guard !suggestions.isEmpty else {
+                return ("No purchase suggestions could be generated.", [])
+            }
+
+            // Build tool result text so Claude can comment naturally
+            var resultText = "Generated \(suggestions.count) purchase suggestion\(suggestions.count == 1 ? "" : "s"):\n"
+            for (i, s) in suggestions.enumerated() {
+                resultText += "\(i + 1). \(s.description) (\(s.category)) — pairs with \(s.wardrobeCompatibilityCount) items\n"
+            }
+            resultText += "Display these suggestions to the user as structured cards."
+
+            return (resultText, suggestions)
+        } catch {
+            return ("Failed to generate suggestions: \(error.localizedDescription)", [])
+        }
+    }
+
     private func resolveOutfit(named name: String) -> Outfit? {
         let allConversationOutfits = messages.flatMap(\.outfits).reversed()
         if !name.isEmpty {
@@ -634,13 +681,15 @@ class AgentViewModel {
         text: String?,
         outfits: [Outfit],
         wardrobeItems: [ClothingItem],
-        insightNote: String?
+        insightNote: String?,
+        purchaseSuggestions: [PurchaseSuggestionDTO] = []
     ) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
         if let text { messages[index].text = text }
         messages[index].outfits.append(contentsOf: outfits)
         messages[index].wardrobeItems.append(contentsOf: wardrobeItems)
         if let insightNote { messages[index].insightNote = insightNote }
+        messages[index].purchaseSuggestions.append(contentsOf: purchaseSuggestions)
     }
 
     // MARK: - Save Outfit
@@ -709,6 +758,7 @@ class AgentViewModel {
         - When the user wants to MODIFY an outfit from this conversation ("swap the shoes", "add a jacket", "remove the tie", "make it more casual", "rename it"), use the editOutfit tool.
         - When the user states a preference/dislike OR you observe a behavioral pattern from their edits/rejections, use updateStyleInsight. Include category and signal when you can determine them.
         - When the user wants an outfit built around a SPECIFIC ITEM or COLOR ("build around my leather jacket", "something red"), use searchWardrobe first to find matching items, then use generateOutfit with must_include_items to anchor on those pieces.
+        - When the user asks what they should BUY, what to ADD to their wardrobe, what's WORTH PURCHASING, or what new item would unlock more outfits ("what should I buy?", "what's missing that I should get?", "what new piece would work with what I have?"), use the suggestPurchases tool. If they specify a category (e.g. "a jacket", "trousers"), pass it as the category parameter.
         \(ambiguousIntentRule)
         - If searchOutfits returns no results, explain that and offer to generate something new instead.
         """
