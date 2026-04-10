@@ -55,7 +55,7 @@ struct AnthropicService {
     - primary_color: the dominant color (e.g., "Navy Blue", "Charcoal", "Cream")
     - secondary_color: accent or secondary color if present, otherwise null
     - pattern: one of "Solid", "Striped", "Plaid", "Floral", "Graphic", "Abstract", "Polka Dot", "Geometric", "Camo", "Other"
-    - fabric_estimate: best guess at material (e.g., "Cotton", "Denim", "Wool", "Polyester", "Linen", "Leather", "Suede", "Silk", "Knit", "Fleece")
+    - fabric_estimate: best guess at fiber/material (e.g., "Cotton", "Denim", "Wool", "Cashmere", "Acrylic", "Polyester", "Linen", "Leather", "Suede", "Silk", "Fleece", "Synthetic Blend"). Note: "Knit" is a construction method, not a material — for knitwear (sweaters, cardigans, jerseys), identify the actual fiber instead (Wool, Cotton, Cashmere, Acrylic, etc.)
     - weight: one of "Lightweight", "Midweight", "Heavyweight"
     - formality: one of "Casual", "Smart Casual", "Business Casual", "Business", "Formal"
     - season: array of applicable seasons from ["Spring", "Summer", "Fall", "Winter"]

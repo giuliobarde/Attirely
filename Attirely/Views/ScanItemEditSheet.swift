@@ -21,7 +21,7 @@ struct ScanItemEditSheet: View {
 
     private let categories = ["Top", "Bottom", "Outerwear", "Footwear", "Accessory", "Full Body"]
     private let patterns = ["Solid", "Striped", "Plaid", "Floral", "Graphic", "Abstract", "Polka Dot", "Geometric", "Camo", "Other"]
-    private let fabrics = ["Cotton", "Denim", "Wool", "Polyester", "Linen", "Leather", "Suede", "Silk", "Knit", "Fleece"]
+    private let fabrics = ["Cotton", "Denim", "Wool", "Cashmere", "Acrylic", "Polyester", "Linen", "Leather", "Suede", "Silk", "Fleece", "Synthetic Blend"]
     private let weights = ["Lightweight", "Midweight", "Heavyweight"]
     private let formalities = ["Casual", "Smart Casual", "Business Casual", "Business", "Formal"]
     private let fits = ["Slim", "Regular", "Relaxed", "Oversized", "Cropped"]

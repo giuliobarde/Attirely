@@ -33,7 +33,7 @@ struct ItemDetailView: View {
     ]
     private let fabrics = [
         "Cotton", "Polyester", "Wool", "Silk", "Linen", "Denim", "Leather",
-        "Suede", "Nylon", "Cashmere", "Fleece", "Velvet", "Satin", "Tweed",
+        "Suede", "Nylon", "Cashmere", "Acrylic", "Fleece", "Velvet", "Satin", "Tweed",
         "Corduroy", "Chiffon", "Jersey", "Synthetic Blend"
     ]
     private let weights = ["Lightweight", "Midweight", "Heavyweight"]
