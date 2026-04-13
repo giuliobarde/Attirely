@@ -154,10 +154,7 @@ class WardrobeViewModel {
         }
 
         for item in targets {
-            if let path = item.imagePath {
-                ImageStorageService.deleteImage(relativePath: path)
-            }
-            if let path = item.sourceImagePath {
+            for path in item.allImagePaths {
                 ImageStorageService.deleteImage(relativePath: path)
             }
             context.delete(item)
@@ -173,10 +170,7 @@ class WardrobeViewModel {
         for outfit in affectedOutfits {
             context.delete(outfit)
         }
-        if let path = item.imagePath {
-            ImageStorageService.deleteImage(relativePath: path)
-        }
-        if let path = item.sourceImagePath {
+        for path in item.allImagePaths {
             ImageStorageService.deleteImage(relativePath: path)
         }
         context.delete(item)

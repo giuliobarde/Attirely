@@ -26,6 +26,7 @@ final class ClothingItem {
     // Image paths (relative to Documents directory)
     var imagePath: String?
     var sourceImagePath: String?
+    var additionalImagePaths: String?   // JSON-encoded [String] of extra scan image paths
 
     // Metadata
     var createdAt: Date
@@ -89,6 +90,42 @@ final class ClothingItem {
         self.updatedAt = Date()
         self.aiOriginalValues = Self.encodeOriginalValues(dto)
     }
+
+    // MARK: - Additional Images
+
+    var additionalImagePathsDecoded: [String] {
+        get {
+            guard let data = additionalImagePaths?.data(using: .utf8),
+                  let arr = try? JSONDecoder().decode([String].self, from: data)
+            else { return [] }
+            return arr
+        }
+        set {
+            guard !newValue.isEmpty else { additionalImagePaths = nil; return }
+            additionalImagePaths = String(data: (try? JSONEncoder().encode(newValue)) ?? Data(), encoding: .utf8)
+        }
+    }
+
+    /// All image paths in display priority order: imagePath → sourceImagePath → additionalImagePaths
+    var allImagePaths: [String] {
+        var paths: [String] = []
+        if let p = imagePath { paths.append(p) }
+        if let p = sourceImagePath, !paths.contains(p) { paths.append(p) }
+        for p in additionalImagePathsDecoded where !paths.contains(p) { paths.append(p) }
+        return paths
+    }
+
+    /// The path used in card/list views and as the default gallery first page.
+    var displayImagePath: String? { allImagePaths.first }
+
+    func appendAdditionalImagePath(_ path: String) {
+        var current = additionalImagePathsDecoded
+        guard !current.contains(path) else { return }
+        current.append(path)
+        additionalImagePathsDecoded = current
+    }
+
+    // MARK: - AI Original Values
 
     func originalAIValue(for field: String) -> String? {
         guard let json = aiOriginalValues,

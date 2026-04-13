@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 struct ItemDetailView: View {
     @Bindable var item: ClothingItem
@@ -16,6 +17,11 @@ struct ItemDetailView: View {
     @State private var isSeasonExpanded = false
     @State private var isTagsExpanded = false
     @State private var isNotesExpanded = false
+    @State private var galleryPage: Int = 0
+    @State private var addPhotoPickerItem: PhotosPickerItem? = nil
+    @State private var showAddPhotoOptions: Bool = false
+    @State private var showCameraPicker: Bool = false
+    @State private var showPhotoLibraryPicker: Bool = false
 
     @Query private var profiles: [UserProfile]
     @Query private var styleSummaries: [StyleSummary]
@@ -83,15 +89,28 @@ struct ItemDetailView: View {
                 styleSummaryText: styleSummaryText
             )
         }
+        .photosPicker(isPresented: $showPhotoLibraryPicker, selection: $addPhotoPickerItem, matching: .images)
+        .onChange(of: addPhotoPickerItem) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self),
+                   let image = UIImage(data: data) {
+                    await saveAddedPhoto(image)
+                }
+                addPhotoPickerItem = nil
+            }
+        }
+        .sheet(isPresented: $showCameraPicker) {
+            ImagePicker(sourceType: .camera) { image in
+                Task { await saveAddedPhoto(image) }
+            }
+        }
         .confirmationDialog("Delete this item?", isPresented: $showDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 for outfit in affectedOutfits {
                     modelContext.delete(outfit)
                 }
-                if let path = item.imagePath {
-                    ImageStorageService.deleteImage(relativePath: path)
-                }
-                if let path = item.sourceImagePath {
+                for path in item.allImagePaths {
                     ImageStorageService.deleteImage(relativePath: path)
                 }
                 modelContext.delete(item)
@@ -115,9 +134,36 @@ struct ItemDetailView: View {
     // MARK: - Image
 
     private var imageSection: some View {
+        let paths = item.allImagePaths
+        return VStack(spacing: 8) {
+            if paths.isEmpty {
+                EmptyView()
+            } else if paths.count == 1 {
+                singleImageView(path: paths[0])
+            } else {
+                multiImageGallery(paths: paths)
+            }
+            addPhotoButton
+        }
+    }
+
+    private var addPhotoButton: some View {
+        Button {
+            showAddPhotoOptions = true
+        } label: {
+            Label("Add Photo", systemImage: "plus.circle")
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+        }
+        .confirmationDialog("Add Photo", isPresented: $showAddPhotoOptions) {
+            Button("Take Photo") { showCameraPicker = true }
+            Button("Photo Library") { showPhotoLibraryPicker = true }
+        }
+    }
+
+    private func singleImageView(path: String) -> some View {
         Group {
-            if let path = item.imagePath ?? item.sourceImagePath,
-               let image = ImageStorageService.loadImage(relativePath: path) {
+            if let image = ImageStorageService.loadImage(relativePath: path) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -126,6 +172,96 @@ struct ItemDetailView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private func multiImageGallery(paths: [String]) -> some View {
+        VStack(spacing: 8) {
+            ZStack(alignment: .leading) {
+                // Peek: left edge of next image visible on the right side
+                let peekIndex = (galleryPage + 1) % paths.count
+                if let peekImg = ImageStorageService.loadImage(relativePath: paths[peekIndex]) {
+                    HStack(spacing: 0) {
+                        Color.clear
+                        Image(uiImage: peekImg)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 52, height: 272)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .opacity(0.65)
+                    }
+                    .allowsHitTesting(false)
+                }
+
+                // Main swipeable gallery — inset trailing to reveal peek
+                TabView(selection: $galleryPage) {
+                    ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
+                        if let image = ImageStorageService.loadImage(relativePath: path) {
+                            ZStack(alignment: .bottomTrailing) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                if index == 0 {
+                                    Label("Primary", systemImage: "star.fill")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(Theme.champagne)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(.ultraThinMaterial)
+                                        .clipShape(Capsule())
+                                        .padding(10)
+                                }
+                            }
+                            .frame(maxHeight: 300)
+                            .frame(maxWidth: .infinity)
+                            .tag(index)
+                        }
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                .frame(height: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.trailing, 60)
+            }
+            .frame(height: 300)
+
+            if galleryPage > 0 {
+                Button { setCurrentImageAsPrimary(paths: paths) } label: {
+                    Label("Set as Primary", systemImage: "star")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Theme.champagne)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: galleryPage)
+    }
+
+    private func setCurrentImageAsPrimary(paths: [String]) {
+        guard galleryPage > 0, galleryPage < paths.count else { return }
+        let chosen = paths[galleryPage]
+        var additional = item.additionalImagePathsDecoded
+
+        // Preserve the old imagePath in additional if it won't appear elsewhere
+        if let old = item.imagePath, old != chosen, old != item.sourceImagePath, !additional.contains(old) {
+            additional.append(old)
+        }
+        additional.removeAll { $0 == chosen }
+
+        item.imagePath = chosen
+        item.additionalImagePathsDecoded = additional
+        item.updatedAt = Date()
+        try? modelContext.save()
+        withAnimation { galleryPage = 0 }
+    }
+
+    private func saveAddedPhoto(_ image: UIImage) async {
+        guard let path = try? ImageStorageService.saveClothingImage(image, id: UUID()) else { return }
+        item.appendAdditionalImagePath(path)
+        item.updatedAt = Date()
+        try? modelContext.save()
+        let targetPage = item.allImagePaths.count - 1
+        withAnimation { galleryPage = targetPage }
     }
 
     // MARK: - Details

@@ -26,6 +26,7 @@ class ScanViewModel {
 
     // "Use Existing" duplicate linking
     var existingItemMapping: [UUID: ClothingItem] = [:]
+    private var addedImagePaths: [UUID: String] = [:]  // dtoID → path appended to existing item
 
     var modelContext: ModelContext?
     var styleViewModel: StyleViewModel?
@@ -93,6 +94,7 @@ class ScanViewModel {
         outfitSuggestion = nil
         outfitSaved = false
         existingItemMapping = [:]
+        addedImagePaths = [:]
 
         analysisTask = Task {
             do {
@@ -202,10 +204,37 @@ class ScanViewModel {
     // MARK: - "Use Existing" Actions
 
     func useExistingItem(dtoID: UUID, existingItem: ClothingItem) {
-        existingItemMapping[dtoID] = existingItem
+        existingItemMapping[dtoID] = existingItem   // synchronous so UI reacts immediately
+
+        Task {
+            // Guard: if user undid the link before the Task ran, skip everything
+            guard existingItemMapping[dtoID] != nil else { return }
+            guard let image = bestSourceImage(for: dtoID) else { return }
+            guard let modelContext else { return }
+
+            do {
+                let path = try ImageStorageService.saveScanImage(image, id: UUID())
+                existingItem.appendAdditionalImagePath(path)
+                existingItem.updatedAt = Date()
+                try modelContext.save()
+                addedImagePaths[dtoID] = path
+            } catch {
+                // Non-fatal — linking still works, image just won't be persisted
+            }
+        }
     }
 
     func revertToNewItem(dtoID: UUID) {
+        if let existing = existingItemMapping[dtoID],
+           let path = addedImagePaths[dtoID] {
+            var paths = existing.additionalImagePathsDecoded
+            paths.removeAll { $0 == path }
+            existing.additionalImagePathsDecoded = paths
+            existing.updatedAt = Date()
+            try? modelContext?.save()
+            ImageStorageService.deleteImage(relativePath: path)
+            addedImagePaths.removeValue(forKey: dtoID)
+        }
         existingItemMapping.removeValue(forKey: dtoID)
     }
 
@@ -262,6 +291,11 @@ class ScanViewModel {
         let index = dto.sourceImageIndices.first ?? 0
         guard index < selectedImages.count else { return selectedImages.first }
         return selectedImages[index]
+    }
+
+    func bestSourceImage(for dtoID: UUID) -> UIImage? {
+        guard let dto = scannedItems.first(where: { $0.id == dtoID }) else { return nil }
+        return bestSourceImage(for: dto)
     }
 
     private func checkForDuplicates(items: [ClothingItemDTO]) async {
