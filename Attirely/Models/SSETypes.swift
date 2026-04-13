@@ -9,6 +9,7 @@ enum SSEEvent {
     case contentBlockStop(index: Int)
     case messageDelta(stopReason: String?)
     case messageStop
+    case error(String)
 }
 
 // MARK: - Content Block Accumulator
@@ -43,6 +44,9 @@ struct ContentBlockAccumulator {
             stopReason = reason
 
         case .messageStop:
+            break
+
+        case .error:
             break
         }
     }

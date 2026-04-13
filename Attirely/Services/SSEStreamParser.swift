@@ -68,7 +68,15 @@ struct SSEStreamParser {
             // Blank line = event boundary — dispatch if we have data
             if !data.isEmpty {
                 if let event = parseEvent(type: eventType, data: data) {
-                    continuation.yield(event)
+                    if case .error(let info) = event {
+                        if info.contains("overloaded") {
+                            continuation.finish(throwing: AnthropicError.overloaded)
+                        } else {
+                            continuation.finish(throwing: AnthropicError.apiError(0, info))
+                        }
+                    } else {
+                        continuation.yield(event)
+                    }
                 }
                 data = ""
                 eventType = ""
@@ -124,13 +132,10 @@ struct SSEStreamParser {
             return .messageStop
 
         case "error":
-            // API error event — surface as a thrown error
-            let error = json["error"] as? [String: Any]
-            let message = error?["message"] as? String ?? "Unknown streaming error"
-            // We can't throw from here, but we can return nil and let the stream handle it
-            // For now, log and skip — the HTTP status check catches most errors
-            print("[SSE] Error event: \(message)")
-            return nil
+            let errorObj = json["error"] as? [String: Any]
+            let errorType = errorObj?["type"] as? String ?? ""
+            let message = errorObj?["message"] as? String ?? "Unknown streaming error"
+            return .error(errorType.isEmpty ? message : "\(errorType):\(message)")
 
         default:
             // message_start, ping, etc. — ignore

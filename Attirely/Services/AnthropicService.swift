@@ -9,6 +9,7 @@ enum AnthropicError: LocalizedError {
     case emptyResults
     case insufficientWardrobe
     case insufficientData
+    case overloaded
 
     var errorDescription: String? {
         switch self {
@@ -18,6 +19,8 @@ enum AnthropicError: LocalizedError {
             return "Unable to connect. Check your internet connection."
         case .apiError:
             return "Something went wrong. Please try again."
+        case .overloaded:
+            return "Claude is currently overloaded. Please try again in a moment."
         case .decodingError(let detail):
             return "Failed to parse the response: \(detail)"
         case .emptyResults:

@@ -227,7 +227,12 @@ class AgentViewModel {
             }
         } catch {
             if !Task.isCancelled {
-                let errorText = "Something went wrong: \(error.localizedDescription)"
+                let errorText: String
+                if case AnthropicError.overloaded = error {
+                    errorText = "Claude is currently overloaded — please try again in a moment."
+                } else {
+                    errorText = "Something went wrong. Please try again."
+                }
                 finalizeMessage(streamingID: streamingID, text: errorText)
             }
         }

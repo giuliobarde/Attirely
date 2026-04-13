@@ -17,7 +17,7 @@ struct ItemDetailView: View {
     @State private var isSeasonExpanded = false
     @State private var isTagsExpanded = false
     @State private var isNotesExpanded = false
-    @State private var galleryPage: Int = 0
+    @State private var galleryPageID: Int? = 0
     @State private var addPhotoPickerItem: PhotosPickerItem? = nil
     @State private var showAddPhotoOptions: Bool = false
     @State private var showCameraPicker: Bool = false
@@ -176,24 +176,8 @@ struct ItemDetailView: View {
 
     private func multiImageGallery(paths: [String]) -> some View {
         VStack(spacing: 8) {
-            ZStack(alignment: .leading) {
-                // Peek: left edge of next image visible on the right side
-                let peekIndex = (galleryPage + 1) % paths.count
-                if let peekImg = ImageStorageService.loadImage(relativePath: paths[peekIndex]) {
-                    HStack(spacing: 0) {
-                        Color.clear
-                        Image(uiImage: peekImg)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 52, height: 272)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .opacity(0.65)
-                    }
-                    .allowsHitTesting(false)
-                }
-
-                // Main swipeable gallery — inset trailing to reveal peek
-                TabView(selection: $galleryPage) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
                     ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
                         if let image = ImageStorageService.loadImage(relativePath: path) {
                             ZStack(alignment: .bottomTrailing) {
@@ -213,19 +197,40 @@ struct ItemDetailView: View {
                                 }
                             }
                             .frame(maxHeight: 300)
-                            .frame(maxWidth: .infinity)
-                            .tag(index)
+                            .containerRelativeFrame(.horizontal)
+                            .id(index)
+                            .scrollTransition(axis: .horizontal) { content, phase in
+                                content
+                                    .rotation3DEffect(
+                                        .degrees(phase.value * 30),
+                                        axis: (x: 0, y: 1, z: 0),
+                                        perspective: 0.5
+                                    )
+                                    .opacity(1 - abs(phase.value) * 0.35)
+                            }
                         }
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .always))
-                .frame(height: 300)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .padding(.trailing, 60)
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $galleryPageID)
             .frame(height: 300)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            if galleryPage > 0 {
+            // Page dots
+            HStack(spacing: 6) {
+                ForEach(paths.indices, id: \.self) { index in
+                    Circle()
+                        .fill(index == (galleryPageID ?? 0)
+                              ? Color.primary
+                              : Color.secondary.opacity(0.4))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: galleryPageID)
+
+            if (galleryPageID ?? 0) > 0 {
                 Button { setCurrentImageAsPrimary(paths: paths) } label: {
                     Label("Set as Primary", systemImage: "star")
                         .font(.subheadline.weight(.medium))
@@ -234,12 +239,13 @@ struct ItemDetailView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: galleryPage)
+        .animation(.easeInOut(duration: 0.2), value: galleryPageID)
     }
 
     private func setCurrentImageAsPrimary(paths: [String]) {
-        guard galleryPage > 0, galleryPage < paths.count else { return }
-        let chosen = paths[galleryPage]
+        let page = galleryPageID ?? 0
+        guard page > 0, page < paths.count else { return }
+        let chosen = paths[page]
         var additional = item.additionalImagePathsDecoded
 
         // Preserve the old imagePath in additional if it won't appear elsewhere
@@ -252,7 +258,7 @@ struct ItemDetailView: View {
         item.additionalImagePathsDecoded = additional
         item.updatedAt = Date()
         try? modelContext.save()
-        withAnimation { galleryPage = 0 }
+        galleryPageID = 0
     }
 
     private func saveAddedPhoto(_ image: UIImage) async {
@@ -260,8 +266,7 @@ struct ItemDetailView: View {
         item.appendAdditionalImagePath(path)
         item.updatedAt = Date()
         try? modelContext.save()
-        let targetPage = item.allImagePaths.count - 1
-        withAnimation { galleryPage = targetPage }
+        galleryPageID = item.allImagePaths.count - 1
     }
 
     // MARK: - Details
