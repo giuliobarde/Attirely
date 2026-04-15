@@ -224,14 +224,6 @@ struct AgentView: View {
                 .font(.subheadline)
                 .lineLimit(1...4)
                 .focused($isInputFocused)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(Theme.cardFill)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Theme.cardBorder, lineWidth: 0.5)
-                )
                 .onSubmit {
                     guard canSend else { return }
                     viewModel.sendUserMessage()
@@ -246,9 +238,12 @@ struct AgentView: View {
             }
             .disabled(!canSend)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .padding(.top, 4)
     }
 
     // MARK: - Weather Chip

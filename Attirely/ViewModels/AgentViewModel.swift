@@ -778,6 +778,11 @@ class AgentViewModel {
             prompt += "\n\nCURRENT WEATHER: Not available."
         }
 
+        // Temperature display preference — avoid degree symbol to prevent UTF-8 encoding corruption
+        let preferredUnit = userProfile?.temperatureUnit ?? .celsius
+        let unitLabel = preferredUnit == .fahrenheit ? "Fahrenheit (F)" : "Celsius (C)"
+        prompt += "\n\nTEMPERATURE DISPLAY: Weather data above is in Celsius. When mentioning temperatures in your responses, convert and display in \(unitLabel)."
+
         // Comfort preferences
         if let comfort = StyleContextHelper.comfortPreferencesString(from: userProfile) {
             prompt += "\n\nUSER COMFORT PREFERENCES:\n\(comfort)"

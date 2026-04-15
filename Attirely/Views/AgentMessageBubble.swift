@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 struct AgentMessageBubble: View {
     let message: ChatMessage
@@ -7,6 +8,18 @@ struct AgentMessageBubble: View {
     let onItemTap: (ClothingItem) -> Void
     var itemsForOutfit: ((Outfit) -> [ClothingItem])? = nil
     var onBuildOutfitAround: ((String) -> Void)? = nil
+
+    @State private var phraseIndex = 0
+
+    private let thinkingPhrases = [
+        "Checking your wardrobe…",
+        "Exploring outfit options…",
+        "Thinking about combinations…",
+        "Considering the weather…",
+        "Looking through your style…",
+        "Finding the right pieces…",
+        "Pulling things together…",
+    ]
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -204,18 +217,26 @@ struct AgentMessageBubble: View {
     // MARK: - Streaming Indicator
 
     private var streamingIndicator: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(Theme.stone)
-                    .frame(width: 6, height: 6)
-                    .opacity(0.4)
-                    .animation(
-                        .easeInOut(duration: 0.6)
-                        .repeatForever()
-                        .delay(Double(index) * 0.2),
-                        value: message.isStreaming
-                    )
+        VStack(alignment: .leading, spacing: 8) {
+            Text(thinkingPhrases[phraseIndex % thinkingPhrases.count])
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondaryText)
+                .id(phraseIndex)
+                .transition(.opacity)
+
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(Theme.stone)
+                        .frame(width: 4, height: 4)
+                        .opacity(0.3)
+                        .animation(
+                            .easeInOut(duration: 0.6)
+                            .repeatForever()
+                            .delay(Double(index) * 0.2),
+                            value: message.isStreaming
+                        )
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -226,6 +247,11 @@ struct AgentMessageBubble: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Theme.cardBorder, lineWidth: 0.5)
         )
+        .onReceive(Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()) { _ in
+            withAnimation(.easeInOut(duration: 0.4)) {
+                phraseIndex += 1
+            }
+        }
     }
 
     // MARK: - Wardrobe Item List

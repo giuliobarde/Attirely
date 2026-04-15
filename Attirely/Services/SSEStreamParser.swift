@@ -6,36 +6,43 @@ struct SSEStreamParser {
     static func parse(bytes: URLSession.AsyncBytes) -> AsyncThrowingStream<SSEEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
-                var lineBuffer = ""
+                // Buffer raw bytes so multi-byte UTF-8 sequences (e.g. °, emoji) are
+                // decoded correctly. Decoding byte-by-byte treats each byte as its own
+                // scalar, corrupting any non-ASCII character (e.g. ° → Â°).
+                var lineBuffer: [UInt8] = []
                 var currentEventType = ""
                 var currentData = ""
+
+                func flushLine() {
+                    // Strip trailing \r to handle \r\n line endings
+                    if lineBuffer.last == UInt8(ascii: "\r") {
+                        lineBuffer.removeLast()
+                    }
+                    if let line = String(bytes: lineBuffer, encoding: .utf8) {
+                        processLine(
+                            line,
+                            eventType: &currentEventType,
+                            data: &currentData,
+                            continuation: continuation
+                        )
+                    }
+                    lineBuffer = []
+                }
 
                 do {
                     for try await byte in bytes {
                         if Task.isCancelled { break }
 
-                        let char = Character(UnicodeScalar(byte))
-                        if char == "\n" {
-                            processLine(
-                                lineBuffer,
-                                eventType: &currentEventType,
-                                data: &currentData,
-                                continuation: continuation
-                            )
-                            lineBuffer = ""
+                        if byte == UInt8(ascii: "\n") {
+                            flushLine()
                         } else {
-                            lineBuffer.append(char)
+                            lineBuffer.append(byte)
                         }
                     }
 
                     // Process any remaining data in the buffer
                     if !lineBuffer.isEmpty {
-                        processLine(
-                            lineBuffer,
-                            eventType: &currentEventType,
-                            data: &currentData,
-                            continuation: continuation
-                        )
+                        flushLine()
                     }
 
                     continuation.finish()

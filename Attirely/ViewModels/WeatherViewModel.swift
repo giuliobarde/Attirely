@@ -31,9 +31,9 @@ class WeatherViewModel {
     var weatherContextString: String? {
         guard !userOverridesWeather, let s = snapshot else { return nil }
         let c = s.current
-        // Always send Celsius to AI for consistency
+        // Always send Celsius to AI for consistency. Use "degC" (no degree symbol) to avoid UTF-8/Latin-1 corruption when Claude echoes the value back.
         return """
-        Weather: \(c.conditionDescription), \(String(format: "%.0f°C", c.temperature)) (feels like \(String(format: "%.0f°C", c.feelsLike)))
+        Weather: \(c.conditionDescription), \(String(format: "%.0f degC", c.temperature)) (feels like \(String(format: "%.0f degC", c.feelsLike)))
         Humidity: \(Int(c.humidity * 100))%
         Wind: \(String(format: "%.0f", c.windSpeed)) km/h
         Precipitation chance: \(Int(c.precipitationChance * 100))%
