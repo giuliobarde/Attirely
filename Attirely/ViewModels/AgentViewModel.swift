@@ -521,62 +521,36 @@ class AgentViewModel {
 
     private func executeEditOutfit(_ input: EditOutfitInput) -> (String, [Outfit], [ClothingItem], String?) {
         guard let outfit = resolveOutfit(named: input.outfitName) else {
-            return ("Could not find an outfit matching '\(input.outfitName)' in this conversation.", [], [], nil)
+            return ("Could not find an outfit matching '\(input.outfitName)' in this conversation or wardrobe.", [], [], nil)
         }
+        if outfit.modelContext != nil {
+            return executeEditSavedOutfitAsCopy(input, source: outfit)
+        } else {
+            return executeEditConversationOutfit(input, outfit: outfit)
+        }
+    }
 
+    // Edit an unsaved conversation outfit in place (original behavior).
+    private func executeEditConversationOutfit(
+        _ input: EditOutfitInput,
+        outfit: Outfit
+    ) -> (String, [Outfit], [ClothingItem], String?) {
         var currentItems = pendingOutfitItems[outfit.id] ?? outfit.items
-        var removedDescriptions: [String] = []
-        var addedDescriptions: [String] = []
 
-        // Apply removals
-        for desc in input.removeItems {
-            if let match = matchItem(description: desc, in: currentItems) {
-                currentItems.removeAll { $0.id == match.id }
-                removedDescriptions.append("\(match.type) (\(match.primaryColor))")
+        let (updatedItems, removed, added) = applyItemEdits(
+            remove: input.removeItems,
+            add: input.addItems,
+            to: currentItems,
+            occasionContext: outfit.occasion
+        )
+        currentItems = updatedItems
 
-                // Record negative signal for the removed item
-                if let inferredSignal = ObservationManager.inferNegativeSignal(
-                    removedItem: match,
-                    occasionContext: outfit.occasion
-                ), let summary = styleSummary {
-                    var observations = summary.behavioralNotesDecoded
-                    observations = ObservationManager.recordObservation(
-                        pattern: inferredSignal.pattern,
-                        category: inferredSignal.category,
-                        signal: .negative,
-                        threshold: 3,
-                        occasionContext: outfit.occasion,
-                        in: observations
-                    )
-                    summary.behavioralNotesDecoded = observations
-                    try? modelContext?.save()
-                }
-            }
-        }
+        // Apply metadata directly (safe — not yet in SwiftData)
+        if let newName = input.newName, !newName.isEmpty { outfit.name = newName }
+        if let newOccasion = input.newOccasion, !newOccasion.isEmpty { outfit.occasion = newOccasion }
 
-        // Apply additions
-        let availableToAdd = wardrobeItems.filter { candidate in
-            !currentItems.contains { $0.id == candidate.id }
-        }
-        for desc in input.addItems {
-            if let match = matchItem(description: desc, in: availableToAdd) {
-                currentItems.append(match)
-                addedDescriptions.append("\(match.type) (\(match.primaryColor))")
-            }
-        }
-
-        // Apply metadata
-        if let newName = input.newName, !newName.isEmpty {
-            outfit.name = newName
-        }
-        if let newOccasion = input.newOccasion, !newOccasion.isEmpty {
-            outfit.occasion = newOccasion
-        }
-
-        // Store updated items in pending (don't assign to outfit.items to avoid auto-save)
         pendingOutfitItems[outfit.id] = currentItems
 
-        // Validate composition
         let warnings = OutfitLayerOrder.warnings(for: currentItems)
 
         // Force UI refresh on the message containing this outfit
@@ -584,21 +558,51 @@ class AgentViewModel {
             messages[msgIndex].outfits = messages[msgIndex].outfits
         }
 
-        // Build result summary
         var summary = "Updated outfit \"\(outfit.displayName)\"."
-        if !removedDescriptions.isEmpty {
-            summary += " Removed: \(removedDescriptions.joined(separator: ", "))."
-        }
-        if !addedDescriptions.isEmpty {
-            summary += " Added: \(addedDescriptions.joined(separator: ", "))."
-        }
+        if !removed.isEmpty { summary += " Removed: \(removed.joined(separator: ", "))." }
+        if !added.isEmpty { summary += " Added: \(added.joined(separator: ", "))." }
         let itemList = currentItems.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
         summary += " Current items (\(currentItems.count)): \(itemList)."
-        if !warnings.isEmpty {
-            summary += " Warnings: \(warnings.joined(separator: "; "))."
-        }
+        if !warnings.isEmpty { summary += " Warnings: \(warnings.joined(separator: "; "))." }
 
         return (summary, [], [], nil)
+    }
+
+    // Edit a saved wardrobe outfit by creating a new copy — original is never modified.
+    private func executeEditSavedOutfitAsCopy(
+        _ input: EditOutfitInput,
+        source: Outfit
+    ) -> (String, [Outfit], [ClothingItem], String?) {
+        let copy = Outfit(
+            name: (input.newName?.isEmpty == false ? input.newName : nil) ?? source.name,
+            occasion: (input.newOccasion?.isEmpty == false ? input.newOccasion : nil) ?? source.occasion,
+            reasoning: source.reasoning,
+            isAIGenerated: source.isAIGenerated,
+            items: [],
+            tags: []
+        )
+
+        let (updatedItems, removed, added) = applyItemEdits(
+            remove: input.removeItems,
+            add: input.addItems,
+            to: source.items,
+            occasionContext: source.occasion
+        )
+
+        pendingOutfitItems[copy.id] = updatedItems
+        pendingOutfitTags[copy.id] = source.tags
+
+        let warnings = OutfitLayerOrder.warnings(for: updatedItems)
+        let itemList = updatedItems.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
+
+        var summary = "Created a new outfit based on \"\(source.displayName)\". The original was not modified."
+        if !removed.isEmpty { summary += " Removed: \(removed.joined(separator: ", "))." }
+        if !added.isEmpty { summary += " Added: \(added.joined(separator: ", "))." }
+        summary += " New outfit items (\(updatedItems.count)): \(itemList)."
+        if !warnings.isEmpty { summary += " Warnings: \(warnings.joined(separator: "; "))." }
+        summary += " Show the new outfit to the user and offer to save it."
+
+        return (summary, [copy], [], nil)
     }
 
     private func executeSuggestPurchases(_ input: SuggestPurchasesInput) async -> (String, [PurchaseSuggestionDTO]) {
@@ -643,9 +647,59 @@ class AgentViewModel {
                 return match
             }
         }
-        // Fallback: most recent unsaved outfit, or just the most recent
-        return allConversationOutfits.first { pendingOutfitItems[$0.id] != nil }
-            ?? allConversationOutfits.first
+        // Fallback: most recent unsaved outfit, or just the most recent conversation outfit
+        if let conversationFallback = allConversationOutfits.first(where: { pendingOutfitItems[$0.id] != nil })
+            ?? allConversationOutfits.first {
+            return conversationFallback
+        }
+        // Final fallback: search saved outfits by name (only when name is explicit)
+        if !name.isEmpty {
+            let lowered = name.lowercased()
+            return allOutfits.first {
+                $0.displayName.lowercased().contains(lowered) ||
+                ($0.occasion?.lowercased().contains(lowered) ?? false)
+            }
+        }
+        return nil
+    }
+
+    // Shared helper: apply remove/add operations to an item list, recording behavioral signals.
+    private func applyItemEdits(
+        remove removeDescs: [String],
+        add addDescs: [String],
+        to startItems: [ClothingItem],
+        occasionContext: String?
+    ) -> (items: [ClothingItem], removed: [String], added: [String]) {
+        var items = startItems
+        var removed: [String] = []
+        var added: [String] = []
+
+        for desc in removeDescs {
+            if let match = matchItem(description: desc, in: items) {
+                items.removeAll { $0.id == match.id }
+                removed.append("\(match.type) (\(match.primaryColor))")
+                if let signal = ObservationManager.inferNegativeSignal(removedItem: match, occasionContext: occasionContext),
+                   let summary = styleSummary {
+                    var observations = summary.behavioralNotesDecoded
+                    observations = ObservationManager.recordObservation(
+                        pattern: signal.pattern, category: signal.category, signal: .negative,
+                        threshold: 3, occasionContext: occasionContext, in: observations
+                    )
+                    summary.behavioralNotesDecoded = observations
+                    try? modelContext?.save()
+                }
+            }
+        }
+
+        let available = wardrobeItems.filter { c in !items.contains { $0.id == c.id } }
+        for desc in addDescs {
+            if let match = matchItem(description: desc, in: available) {
+                items.append(match)
+                added.append("\(match.type) (\(match.primaryColor))")
+            }
+        }
+
+        return (items, removed, added)
     }
 
     private func matchItem(description: String, in items: [ClothingItem]) -> ClothingItem? {
@@ -760,7 +814,7 @@ class AgentViewModel {
         - When the user wants something NEW, DIFFERENT, or a SURPRISE ("give me a new outfit", "surprise me", "something I haven't tried", "create an outfit for…"), use the generateOutfit tool.
         - When the user wants something FAMILIAR, a GO-TO, or PREVIOUSLY WORN ("what do I usually wear", "my go-to work outfit", "something I've worn before", "a classic", "what's my favorite…"), use the searchOutfits tool to find existing saved outfits.
         - When the user asks about specific ITEMS they own ("do I have any blazers?", "what blue tops do I have?"), use the searchWardrobe tool.
-        - When the user wants to MODIFY an outfit from this conversation ("swap the shoes", "add a jacket", "remove the tie", "make it more casual", "rename it"), use the editOutfit tool.
+        - When the user wants to MODIFY an outfit — from this conversation OR a saved outfit they reference by name ("swap the shoes on my work outfit", "update my Casual Friday look", "add a blazer to my dinner outfit") — use the editOutfit tool. For saved outfits, a new variant is created and the original is preserved.
         - When the user states a preference/dislike OR you observe a behavioral pattern from their edits/rejections, use updateStyleInsight. Include category and signal when you can determine them.
         - When the user wants an outfit built around a SPECIFIC ITEM or COLOR ("build around my leather jacket", "something red"), use searchWardrobe first to find matching items, then use generateOutfit with must_include_items to anchor on those pieces.
         - When the user asks what they should BUY, what to ADD to their wardrobe, what's WORTH PURCHASING, or what new item would unlock more outfits ("what should I buy?", "what's missing that I should get?", "what new piece would work with what I have?"), use the suggestPurchases tool. If they specify a category (e.g. "a jacket", "trousers"), pass it as the category parameter.

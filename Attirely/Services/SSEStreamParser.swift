@@ -61,7 +61,7 @@ struct SSEStreamParser {
         }
     }
 
-    private static func processLine(
+    private nonisolated static func processLine(
         _ line: String,
         eventType: inout String,
         data: inout String,
@@ -92,7 +92,7 @@ struct SSEStreamParser {
         // Ignore other lines (comments starting with ":", etc.)
     }
 
-    private static func parseEvent(type: String, data: String) -> SSEEvent? {
+    private nonisolated static func parseEvent(type: String, data: String) -> SSEEvent? {
         guard let jsonData = data.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let payloadType = json["type"] as? String

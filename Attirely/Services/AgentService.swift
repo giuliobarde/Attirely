@@ -187,10 +187,13 @@ struct AgentService {
         [
             "name": "editOutfit",
             "description": """
-                Edit an outfit from this conversation. Use this when the user asks to swap, \
-                replace, add, or remove items in an outfit, rename it, or change its occasion. \
-                Reference items by their type and color (e.g. 'the sneakers', 'navy blazer'). \
-                Use the most recently shown outfit if the user doesn't specify which one.
+                Edit an outfit — either from this conversation or a saved outfit from the user's \
+                wardrobe. Use this when the user asks to swap, replace, add, or remove items, \
+                rename it, or change its occasion. When editing a saved outfit, a new variant is \
+                created and the original is preserved. Reference outfits by name or occasion \
+                (e.g. 'my Work Monday outfit', 'the cocktail look'). Reference items by type and \
+                color (e.g. 'the sneakers', 'navy blazer'). Use the most recently shown outfit if \
+                the user doesn't specify.
                 """,
             "input_schema": [
                 "type": "object",

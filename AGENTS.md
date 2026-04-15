@@ -99,3 +99,26 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+---
+
+# Agent Improvement Backlog
+
+Ideas and priorities discussed during design sessions. Items marked ✅ are implemented.
+
+## Implemented
+- ✅ **editOutfit on saved outfits creates a copy** (v0.10.5): `resolveOutfit` now searches `allOutfits` as a final fallback; editing a saved outfit creates a new pending variant instead of mutating in place. Original is never touched.
+
+## High Priority
+- **Item images in `searchWardrobe` results** — Claude currently sees only text attributes. Passing item images as base64 content blocks in tool results would meaningfully improve styling advice quality.
+- **Fix `searchOutfits` to use OR/score logic** — currently uses `allSatisfy` (AND), so multi-word queries like "casual summer" fail if either word is absent. Should use the same word-scoring approach as `searchWardrobe`.
+
+## Medium Priority
+- **Parallelize independent tool calls** — the `for call in toolCalls` loop in `runConversationLoop` is sequential. Read-only tools (`searchWardrobe`, `searchOutfits`) called in the same turn could run concurrently with `async let` or a `TaskGroup`, reducing latency on multi-tool turns.
+- **`getWardrobeGaps` tool** — gap analysis currently only surfaces as a side effect of `generateOutfit`. A dedicated tool would let the user ask "what's missing from my wardrobe for summer?" without triggering a full outfit generation.
+- **Outfit suggestion feedback loop** — track whether a suggested outfit was saved or dismissed, feed signal back into `updateStyleInsight` automatically. Currently no behavioral signal flows from save/dismiss back to the model.
+
+## Lower Priority / Architectural
+- **Unify nested AI calls in `generateOutfit`** — `executeGenerateOutfit` makes a secondary `AnthropicService.generateOutfits()` call (a full second API round-trip per user turn). Evaluate whether structured output could let the agent handle generation directly, eliminating the nested call.
+- **Cross-session outfit memory** — the agent has no memory of what outfits it previously suggested or whether the user chose/ignored them. Storing suggestion history on `StyleSummary` would enable better continuity across conversations.
+- **Proactive suggestions** — the agent is entirely reactive. Morning suggestions, weather-triggered nudges, and seasonal rotation prompts require a background task / notification layer (out of scope until the Cloudflare Worker proxy is in place).
