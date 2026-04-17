@@ -8,6 +8,8 @@ struct AgentMessageBubble: View {
     let onItemTap: (ClothingItem) -> Void
     var itemsForOutfit: ((Outfit) -> [ClothingItem])? = nil
     var onBuildOutfitAround: ((String) -> Void)? = nil
+    var onUpdateOriginal: ((Outfit) -> Void)? = nil
+    var isCopyOfSavedOutfit: (Outfit) -> Bool = { _ in false }
 
     @State private var phraseIndex = 0
 
@@ -81,14 +83,36 @@ struct AgentMessageBubble: View {
                     }
 
                     if !isSaved(outfit) {
-                        Button {
-                            onSaveOutfit(outfit)
-                        } label: {
-                            Label("Save Outfit", systemImage: "square.and.arrow.down")
-                                .font(.caption)
-                                .fontWeight(.medium)
+                        if isCopyOfSavedOutfit(outfit), let onUpdateOriginal {
+                            HStack(spacing: 14) {
+                                Button {
+                                    onUpdateOriginal(outfit)
+                                } label: {
+                                    Label("Update Original", systemImage: "arrow.triangle.2.circlepath")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundStyle(Theme.champagne)
+
+                                Button {
+                                    onSaveOutfit(outfit)
+                                } label: {
+                                    Label("Save as New", systemImage: "square.and.arrow.down")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                }
+                                .foregroundStyle(Theme.champagne)
+                            }
+                        } else {
+                            Button {
+                                onSaveOutfit(outfit)
+                            } label: {
+                                Label("Save Outfit", systemImage: "square.and.arrow.down")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                            .foregroundStyle(Theme.champagne)
                         }
-                        .foregroundStyle(Theme.champagne)
                     } else {
                         Label("Saved", systemImage: "checkmark.circle.fill")
                             .font(.caption)

@@ -194,6 +194,12 @@ struct AgentView: View {
                             },
                             onBuildOutfitAround: { description in
                                 viewModel.sendStarterMessage("Style an outfit around: \(description)")
+                            },
+                            onUpdateOriginal: { outfit in
+                                viewModel.updateOriginalFromCopy(outfit)
+                            },
+                            isCopyOfSavedOutfit: { outfit in
+                                viewModel.isCopyOfSavedOutfit(outfit)
                             }
                         )
                         .id(message.id)

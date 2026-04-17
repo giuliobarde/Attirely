@@ -56,8 +56,15 @@ class AgentViewModel {
     private var pendingOutfitItems: [UUID: [ClothingItem]] = [:]
     private var pendingOutfitTags: [UUID: [Tag]] = [:]
 
+    // copy.id → source.id — lets "Update Original" know which saved outfit to mutate
+    private var sourceOutfitIDForCopy: [UUID: UUID] = [:]
+
     func displayItems(for outfit: Outfit) -> [ClothingItem] {
         pendingOutfitItems[outfit.id] ?? outfit.items
+    }
+
+    func isCopyOfSavedOutfit(_ outfit: Outfit) -> Bool {
+        sourceOutfitIDForCopy[outfit.id] != nil
     }
 
     // MARK: - Refresh
@@ -524,7 +531,7 @@ class AgentViewModel {
             return ("Could not find an outfit matching '\(input.outfitName)' in this conversation or wardrobe.", [], [], nil)
         }
         if outfit.modelContext != nil {
-            return executeEditSavedOutfitAsCopy(input, source: outfit)
+            return executeEditSavedOutfitAsProposal(input, source: outfit)
         } else {
             return executeEditConversationOutfit(input, outfit: outfit)
         }
@@ -537,7 +544,7 @@ class AgentViewModel {
     ) -> (String, [Outfit], [ClothingItem], String?) {
         var currentItems = pendingOutfitItems[outfit.id] ?? outfit.items
 
-        let (updatedItems, removed, added) = applyItemEdits(
+        let (updatedItems, removed, added, unmatchedRemove, unmatchedAdd) = applyItemEdits(
             remove: input.removeItems,
             add: input.addItems,
             to: currentItems,
@@ -553,14 +560,13 @@ class AgentViewModel {
 
         let warnings = OutfitLayerOrder.warnings(for: currentItems)
 
-        // Force UI refresh on the message containing this outfit
-        if let msgIndex = messages.firstIndex(where: { $0.outfits.contains(where: { $0.id == outfit.id }) }) {
-            messages[msgIndex].outfits = messages[msgIndex].outfits
-        }
+        refreshMessageContaining(outfitID: outfit.id)
 
         var summary = "Updated outfit \"\(outfit.displayName)\"."
         if !removed.isEmpty { summary += " Removed: \(removed.joined(separator: ", "))." }
         if !added.isEmpty { summary += " Added: \(added.joined(separator: ", "))." }
+        if !unmatchedRemove.isEmpty { summary += " Could not find in outfit: \(unmatchedRemove.joined(separator: ", "))." }
+        if !unmatchedAdd.isEmpty { summary += " Could not find in wardrobe: \(unmatchedAdd.joined(separator: ", "))." }
         let itemList = currentItems.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
         summary += " Current items (\(currentItems.count)): \(itemList)."
         if !warnings.isEmpty { summary += " Warnings: \(warnings.joined(separator: "; "))." }
@@ -568,41 +574,92 @@ class AgentViewModel {
         return (summary, [], [], nil)
     }
 
-    // Edit a saved wardrobe outfit by creating a new copy — original is never modified.
-    private func executeEditSavedOutfitAsCopy(
+    // Propose an edit to a saved wardrobe outfit. Renders as an ephemeral copy in the chat;
+    // the user picks via buttons whether to update the original or save as a new outfit.
+    private func executeEditSavedOutfitAsProposal(
         _ input: EditOutfitInput,
         source: Outfit
     ) -> (String, [Outfit], [ClothingItem], String?) {
-        let copy = Outfit(
-            name: (input.newName?.isEmpty == false ? input.newName : nil) ?? source.name,
-            occasion: (input.newOccasion?.isEmpty == false ? input.newOccasion : nil) ?? source.occasion,
-            reasoning: source.reasoning,
-            isAIGenerated: source.isAIGenerated,
-            items: [],
-            tags: []
-        )
-
-        let (updatedItems, removed, added) = applyItemEdits(
+        let (updatedItems, removed, added, unmatchedRemove, unmatchedAdd) = applyItemEdits(
             remove: input.removeItems,
             add: input.addItems,
             to: source.items,
             occasionContext: source.occasion
         )
 
+        let nameChanged = !(input.newName?.isEmpty ?? true)
+        let occasionChanged = !(input.newOccasion?.isEmpty ?? true)
+
+        // Short-circuit: nothing actually changed. Don't render a misleading card; tell Claude to clarify.
+        if removed.isEmpty && added.isEmpty && !nameChanged && !occasionChanged {
+            var msg = "No changes were applied to \"\(source.displayName)\"."
+            if !unmatchedRemove.isEmpty { msg += " Could not locate \(unmatchedRemove.joined(separator: ", ")) in the outfit." }
+            if !unmatchedAdd.isEmpty { msg += " Could not locate \(unmatchedAdd.joined(separator: ", ")) in the wardrobe." }
+            msg += " Ask the user to clarify or rephrase."
+            return (msg, [], [], nil)
+        }
+
+        let copy = Outfit(
+            name: nameChanged ? input.newName : source.name,
+            occasion: occasionChanged ? input.newOccasion : source.occasion,
+            reasoning: source.reasoning,
+            isAIGenerated: source.isAIGenerated,
+            items: [],
+            tags: []
+        )
+
         pendingOutfitItems[copy.id] = updatedItems
         pendingOutfitTags[copy.id] = source.tags
+        sourceOutfitIDForCopy[copy.id] = source.id
 
         let warnings = OutfitLayerOrder.warnings(for: updatedItems)
         let itemList = updatedItems.map { "\($0.type) (\($0.primaryColor))" }.joined(separator: ", ")
 
-        var summary = "Created a new outfit based on \"\(source.displayName)\". The original was not modified."
+        var summary = "Proposed an edit to the saved outfit \"\(source.displayName)\"."
         if !removed.isEmpty { summary += " Removed: \(removed.joined(separator: ", "))." }
         if !added.isEmpty { summary += " Added: \(added.joined(separator: ", "))." }
-        summary += " New outfit items (\(updatedItems.count)): \(itemList)."
+        if !unmatchedRemove.isEmpty { summary += " Could not find in outfit: \(unmatchedRemove.joined(separator: ", "))." }
+        if !unmatchedAdd.isEmpty { summary += " Could not find in wardrobe: \(unmatchedAdd.joined(separator: ", "))." }
+        summary += " Proposed items (\(updatedItems.count)): \(itemList)."
         if !warnings.isEmpty { summary += " Warnings: \(warnings.joined(separator: "; "))." }
-        summary += " Show the new outfit to the user and offer to save it."
+        summary += " The user will choose whether to update the original or save as a new outfit via buttons under the card — simply introduce the variant. Do not say the edit failed, was not applied, or that a copy was made."
 
         return (summary, [copy], [], nil)
+    }
+
+    // Apply an ephemeral copy's fields to its source saved outfit and persist to SwiftData.
+    func updateOriginalFromCopy(_ copy: Outfit) {
+        guard let sourceID = sourceOutfitIDForCopy[copy.id],
+              let source = allOutfits.first(where: { $0.id == sourceID }) else { return }
+
+        let copyItems = pendingOutfitItems[copy.id] ?? copy.items
+        let copyTags = pendingOutfitTags[copy.id] ?? copy.tags
+
+        source.items = copyItems
+        source.tags = copyTags
+        if let newName = copy.name, !newName.isEmpty { source.name = newName }
+        if let newOccasion = copy.occasion, !newOccasion.isEmpty { source.occasion = newOccasion }
+
+        try? modelContext?.save()
+        notifyStyleAnalysis()
+
+        pendingOutfitItems.removeValue(forKey: copy.id)
+        pendingOutfitTags.removeValue(forKey: copy.id)
+        sourceOutfitIDForCopy.removeValue(forKey: copy.id)
+
+        if let msgIndex = messages.firstIndex(where: { $0.outfits.contains(where: { $0.id == copy.id }) }) {
+            var msg = messages[msgIndex]
+            msg.outfits.removeAll { $0.id == copy.id }
+            messages[msgIndex] = msg
+        }
+        refreshMessageContaining(outfitID: source.id)
+    }
+
+    private func refreshMessageContaining(outfitID: UUID) {
+        guard let msgIndex = messages.firstIndex(where: { $0.outfits.contains(where: { $0.id == outfitID }) }) else { return }
+        var msg = messages[msgIndex]
+        msg.outfits = msg.outfits.map { $0 }
+        messages[msgIndex] = msg
     }
 
     private func executeSuggestPurchases(_ input: SuggestPurchasesInput) async -> (String, [PurchaseSuggestionDTO]) {
@@ -669,10 +726,12 @@ class AgentViewModel {
         add addDescs: [String],
         to startItems: [ClothingItem],
         occasionContext: String?
-    ) -> (items: [ClothingItem], removed: [String], added: [String]) {
+    ) -> (items: [ClothingItem], removed: [String], added: [String], unmatchedRemove: [String], unmatchedAdd: [String]) {
         var items = startItems
         var removed: [String] = []
         var added: [String] = []
+        var unmatchedRemove: [String] = []
+        var unmatchedAdd: [String] = []
 
         for desc in removeDescs {
             if let match = matchItem(description: desc, in: items) {
@@ -688,6 +747,8 @@ class AgentViewModel {
                     summary.behavioralNotesDecoded = observations
                     try? modelContext?.save()
                 }
+            } else {
+                unmatchedRemove.append(desc)
             }
         }
 
@@ -696,20 +757,59 @@ class AgentViewModel {
             if let match = matchItem(description: desc, in: available) {
                 items.append(match)
                 added.append("\(match.type) (\(match.primaryColor))")
+            } else {
+                unmatchedAdd.append(desc)
             }
         }
 
-        return (items, removed, added)
+        return (items, removed, added, unmatchedRemove, unmatchedAdd)
     }
 
     private func matchItem(description: String, in items: [ClothingItem]) -> ClothingItem? {
-        let words = description.lowercased().split(separator: " ").map(String.init)
-        let scored = items.map { item in
-            let fields = "\(item.type) \(item.primaryColor) \(item.category) \(item.fabricEstimate)".lowercased()
-            let score = words.filter { fields.contains($0) }.count
+        // Fast path: if any token parses as a UUID matching a candidate, use it. Current code
+        // doesn't expose UUIDs to the agent, but this self-heals if one ever leaks through a tool
+        // result or system prompt and lets us adopt ID-based addressing later without touching this path.
+        for token in description.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "-" }) {
+            if let uuid = UUID(uuidString: String(token)),
+               let match = items.first(where: { $0.id == uuid }) {
+                return match
+            }
+        }
+
+        let descWords = Self.normalizeMatchWords(description)
+        guard !descWords.isEmpty else { return nil }
+
+        let scored = items.map { item -> (ClothingItem, Int) in
+            let fieldText = [
+                item.type, item.primaryColor, item.secondaryColor ?? "",
+                item.category, item.pattern, item.fabricEstimate,
+                item.itemDescription
+            ].joined(separator: " ")
+            let fieldWords = Self.normalizeMatchWords(fieldText)
+            let score = descWords.filter { fieldWords.contains($0) }.count
             return (item, score)
         }
         return scored.filter { $0.1 > 0 }.max(by: { $0.1 < $1.1 })?.0
+    }
+
+    private static let matchStopWords: Set<String> = [
+        "the", "a", "an", "my", "your", "with", "and", "of", "in", "on"
+    ]
+
+    private static func normalizeMatchWords(_ text: String) -> Set<String> {
+        let tokens = text.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count > 1 && !matchStopWords.contains($0) }
+        return Set(tokens.map(normalizeToken))
+    }
+
+    // Collapses common plural/inflected suffixes so "loafers"/"loafer" and "shoes"/"shoe" match.
+    private static func normalizeToken(_ t: String) -> String {
+        if t.count > 4, t.hasSuffix("ies") { return String(t.dropLast(3)) + "y" }
+        if t.count > 3, t.hasSuffix("es") { return String(t.dropLast(2)) }
+        if t.count > 3, t.hasSuffix("s") { return String(t.dropLast()) }
+        return t
     }
 
     // MARK: - Message Management
@@ -791,6 +891,7 @@ class AgentViewModel {
         pendingInsights = []
         pendingOutfitItems = [:]
         pendingOutfitTags = [:]
+        sourceOutfitIDForCopy = [:]
         errorMessage = nil
     }
 
