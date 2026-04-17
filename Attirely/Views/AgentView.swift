@@ -200,6 +200,9 @@ struct AgentView: View {
                             },
                             isCopyOfSavedOutfit: { outfit in
                                 viewModel.isCopyOfSavedOutfit(outfit)
+                            },
+                            onAnswerQuestion: { messageID, answer in
+                                viewModel.submitQuestionAnswer(messageID: messageID, answer: answer)
                             }
                         )
                         .id(message.id)

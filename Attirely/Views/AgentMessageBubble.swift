@@ -10,8 +10,10 @@ struct AgentMessageBubble: View {
     var onBuildOutfitAround: ((String) -> Void)? = nil
     var onUpdateOriginal: ((Outfit) -> Void)? = nil
     var isCopyOfSavedOutfit: (Outfit) -> Bool = { _ in false }
+    var onAnswerQuestion: ((UUID, AgentQuestionAnswer) -> Void)? = nil
 
     @State private var phraseIndex = 0
+    @State private var isWardrobeListExpanded = false
 
     private let thinkingPhrases = [
         "Checking your wardrobe…",
@@ -55,7 +57,7 @@ struct AgentMessageBubble: View {
             if message.isStreaming && message.text == nil {
                 streamingIndicator
             } else if let text = message.text, !text.isEmpty {
-                Text(text)
+                markdownText(text)
                     .font(.subheadline)
                     .foregroundStyle(Theme.primaryText)
                     .textSelection(.enabled)
@@ -147,7 +149,36 @@ struct AgentMessageBubble: View {
             if !message.purchaseSuggestions.isEmpty {
                 purchaseSuggestionList
             }
+
+            // Agent question (multiple choice)
+            if let question = message.question {
+                if let answer = question.answer {
+                    questionRecap(answer)
+                } else {
+                    AgentQuestionCard(question: question) { ans in
+                        onAnswerQuestion?(question.id, ans)
+                    }
+                }
+            }
         }
+    }
+
+    // MARK: - Agent Question Recap
+
+    private func questionRecap(_ answer: AgentQuestionAnswer) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.caption2)
+                .foregroundStyle(Theme.champagne)
+            Text("You chose: \(answer.recap)")
+                .font(.caption)
+                .foregroundStyle(Theme.secondaryText)
+                .italic()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Theme.champagne.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     // MARK: - Purchase Suggestions
@@ -282,50 +313,70 @@ struct AgentMessageBubble: View {
 
     private var wardrobeItemList: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Found \(message.wardrobeItems.count) item\(message.wardrobeItems.count == 1 ? "" : "s")")
-                .font(.caption)
-                .foregroundStyle(Theme.secondaryText)
-
-            ForEach(message.wardrobeItems) { item in
-                Button {
-                    onItemTap(item)
-                } label: {
-                    HStack(spacing: 10) {
-                        if let path = item.sourceImagePath,
-                           let image = ImageStorageService.loadImage(relativePath: path) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 36, height: 36)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                        } else {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Theme.placeholderFill)
-                                .frame(width: 36, height: 36)
-                                .overlay {
-                                    Circle()
-                                        .fill(ColorMapping.color(for: item.primaryColor))
-                                        .frame(width: 16, height: 16)
-                                }
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.type)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundStyle(Theme.primaryText)
-                            Text("\(item.category) · \(item.primaryColor)")
-                                .font(.caption2)
-                                .foregroundStyle(Theme.secondaryText)
-                        }
-
-                        Spacer()
-
-                        Text(item.formality)
-                            .themeTag()
-                    }
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isWardrobeListExpanded.toggle()
                 }
-                .buttonStyle(.plain)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "tshirt")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.champagne)
+                    Text("Found \(message.wardrobeItems.count) item\(message.wardrobeItems.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Theme.primaryText)
+                    Spacer()
+                    Image(systemName: isWardrobeListExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isWardrobeListExpanded {
+                ForEach(message.wardrobeItems) { item in
+                    Button {
+                        onItemTap(item)
+                    } label: {
+                        HStack(spacing: 10) {
+                            if let path = item.sourceImagePath,
+                               let image = ImageStorageService.loadImage(relativePath: path) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 36, height: 36)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            } else {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Theme.placeholderFill)
+                                    .frame(width: 36, height: 36)
+                                    .overlay {
+                                        Circle()
+                                            .fill(ColorMapping.color(for: item.primaryColor))
+                                            .frame(width: 16, height: 16)
+                                    }
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.type)
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(Theme.primaryText)
+                                Text("\(item.category) · \(item.primaryColor)")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.secondaryText)
+                            }
+
+                            Spacer()
+
+                            Text(item.formality)
+                                .themeTag()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .padding(10)
@@ -341,5 +392,17 @@ struct AgentMessageBubble: View {
 
     private func isSaved(_ outfit: Outfit) -> Bool {
         outfit.modelContext != nil
+    }
+
+    private func markdownText(_ raw: String) -> Text {
+        if let attributed = try? AttributedString(
+            markdown: raw,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) {
+            return Text(attributed)
+        }
+        return Text(raw)
     }
 }

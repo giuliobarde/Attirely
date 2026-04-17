@@ -13,6 +13,7 @@ struct ChatMessage: Identifiable {
     var wardrobeItems: [ClothingItem]
     var insightNote: String?
     var purchaseSuggestions: [PurchaseSuggestionDTO]
+    var question: AgentQuestion?
     var isStreaming: Bool
     let timestamp: Date
 
@@ -24,6 +25,7 @@ struct ChatMessage: Identifiable {
         wardrobeItems: [ClothingItem] = [],
         insightNote: String? = nil,
         purchaseSuggestions: [PurchaseSuggestionDTO] = [],
+        question: AgentQuestion? = nil,
         isStreaming: Bool = false,
         timestamp: Date = Date()
     ) {
@@ -34,6 +36,7 @@ struct ChatMessage: Identifiable {
         self.wardrobeItems = wardrobeItems
         self.insightNote = insightNote
         self.purchaseSuggestions = purchaseSuggestions
+        self.question = question
         self.isStreaming = isStreaming
         self.timestamp = timestamp
     }

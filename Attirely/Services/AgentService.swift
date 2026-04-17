@@ -249,6 +249,39 @@ struct AgentService {
                 ],
                 "required": [] as [String]
             ]
+        ],
+        [
+            "name": "askUserQuestion",
+            "description": """
+                Call this whenever you would otherwise list options in prose. If your next \
+                sentence would be "Are you thinking: A, B, or C?" or "Would you prefer X or Y?", \
+                call this tool INSTEAD with those options. Never list choices in text. Provide 2–4 \
+                short, mutually-exclusive options. The UI renders them as tappable buttons with a \
+                built-in "Other" freeform field.
+                """,
+            "input_schema": [
+                "type": "object",
+                "properties": [
+                    "question": [
+                        "type": "string",
+                        "description": "The question to ask. Phrase it clearly and end with a question mark."
+                    ],
+                    "options": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "2–4 short, mutually-exclusive option labels (1–5 words each)."
+                    ],
+                    "allow_other": [
+                        "type": "boolean",
+                        "description": "If true (default), the UI also shows an 'Other' button with a freeform text field."
+                    ],
+                    "multi_select": [
+                        "type": "boolean",
+                        "description": "If true, the user can pick multiple options before submitting. Default false (first tap submits)."
+                    ]
+                ],
+                "required": ["question", "options"]
+            ]
         ]
     ]
 }

@@ -37,6 +37,10 @@ class AgentViewModel {
 
     private(set) var currentTask: Task<Void, Never>?
 
+    // Message IDs whose next text delta should be preceded by a paragraph break.
+    // Set after a tool-using turn ends so Turn N+1 text doesn't concatenate with Turn N text.
+    private var pendingSeparatorMessageIDs: Set<UUID> = []
+
     var hasUnsavedOutfits: Bool {
         !pendingOutfitItems.isEmpty
     }
@@ -192,6 +196,7 @@ class AgentViewModel {
                 var foundItems: [ClothingItem] = []
                 var insightNote: String?
                 var purchaseSuggestions: [PurchaseSuggestionDTO] = []
+                var pendingQuestion: AgentQuestion?
 
                 for call in toolCalls {
                     if call.name == .suggestPurchases {
@@ -204,6 +209,21 @@ class AgentViewModel {
                             "content": resultContent
                         ])
                         purchaseSuggestions.append(contentsOf: suggestions)
+                    } else if call.name == .askUserQuestion {
+                        let input = AskUserQuestionInput(from: call.inputJSON)
+                        pendingQuestion = AgentQuestion(
+                            id: streamingID,
+                            toolUseID: call.toolUseID,
+                            question: input.question,
+                            options: input.options,
+                            allowsOther: input.allowsOther,
+                            multiSelect: input.multiSelect
+                        )
+                        toolResultBlocks.append([
+                            "type": "tool_result",
+                            "tool_use_id": call.toolUseID,
+                            "content": "Question posted to the user. Wait for their reply as a new user message — do not respond further this turn."
+                        ])
                     } else {
                         let (resultContent, toolOutfits, toolItems, toolInsight) = await executeTool(call)
                         toolResultBlocks.append([
@@ -220,15 +240,20 @@ class AgentViewModel {
                 // Append tool results as user message in history
                 history.append(["role": "user", "content": toolResultBlocks])
 
+                // Mark a paragraph break before the next turn's text deltas so
+                // pre-tool narration and post-tool response don't run together.
+                pendingSeparatorMessageIDs.insert(streamingID)
+
                 // Update streaming message with intermediate tool results
-                if !outfits.isEmpty || !foundItems.isEmpty || insightNote != nil || !purchaseSuggestions.isEmpty {
+                if !outfits.isEmpty || !foundItems.isEmpty || insightNote != nil || !purchaseSuggestions.isEmpty || pendingQuestion != nil {
                     updateStreamingMessage(
                         streamingID: streamingID,
                         text: nil,
                         outfits: outfits,
                         wardrobeItems: foundItems,
                         insightNote: insightNote,
-                        purchaseSuggestions: purchaseSuggestions
+                        purchaseSuggestions: purchaseSuggestions,
+                        question: pendingQuestion
                     )
                 }
             }
@@ -263,6 +288,8 @@ class AgentViewModel {
             return executeEditOutfit(EditOutfitInput(from: call.inputJSON))
         case .suggestPurchases:
             return ("suggestPurchases is handled separately.", [], [], nil)
+        case .askUserQuestion:
+            return ("askUserQuestion is handled separately.", [], [], nil)
         }
     }
 
@@ -805,7 +832,7 @@ class AgentViewModel {
     }
 
     // Collapses common plural/inflected suffixes so "loafers"/"loafer" and "shoes"/"shoe" match.
-    private static func normalizeToken(_ t: String) -> String {
+    private nonisolated static func normalizeToken(_ t: String) -> String {
         if t.count > 4, t.hasSuffix("ies") { return String(t.dropLast(3)) + "y" }
         if t.count > 3, t.hasSuffix("es") { return String(t.dropLast(2)) }
         if t.count > 3, t.hasSuffix("s") { return String(t.dropLast()) }
@@ -816,11 +843,18 @@ class AgentViewModel {
 
     private func appendTextToStreamingMessage(streamingID: UUID, delta: String) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        var effectiveDelta = delta
+        if pendingSeparatorMessageIDs.contains(streamingID) {
+            pendingSeparatorMessageIDs.remove(streamingID)
+            if let existing = messages[index].text, !existing.isEmpty {
+                effectiveDelta = "\n\n" + delta
+            }
+        }
         if messages[index].text == nil {
-            messages[index].text = delta
+            messages[index].text = effectiveDelta
             messages[index].isStreaming = false // hide dots once first token arrives
         } else {
-            messages[index].text?.append(delta)
+            messages[index].text?.append(effectiveDelta)
         }
     }
 
@@ -841,7 +875,8 @@ class AgentViewModel {
         outfits: [Outfit],
         wardrobeItems: [ClothingItem],
         insightNote: String?,
-        purchaseSuggestions: [PurchaseSuggestionDTO] = []
+        purchaseSuggestions: [PurchaseSuggestionDTO] = [],
+        question: AgentQuestion? = nil
     ) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
         if let text { messages[index].text = text }
@@ -849,6 +884,19 @@ class AgentViewModel {
         messages[index].wardrobeItems.append(contentsOf: wardrobeItems)
         if let insightNote { messages[index].insightNote = insightNote }
         messages[index].purchaseSuggestions.append(contentsOf: purchaseSuggestions)
+        if let question { messages[index].question = question }
+    }
+
+    func submitQuestionAnswer(messageID: UUID, answer: AgentQuestionAnswer) {
+        guard let idx = messages.firstIndex(where: { $0.id == messageID }),
+              var q = messages[idx].question,
+              q.answer == nil,
+              !isSending else { return }
+        q.answer = answer
+        messages[idx].question = q
+
+        let payload = "In response to your question \"\(q.question)\": \(answer.recap)"
+        sendStarterMessage(payload)
     }
 
     // MARK: - Save Outfit
@@ -892,6 +940,7 @@ class AgentViewModel {
         pendingOutfitItems = [:]
         pendingOutfitTags = [:]
         sourceOutfitIDForCopy = [:]
+        pendingSeparatorMessageIDs = []
         errorMessage = nil
     }
 
@@ -905,6 +954,7 @@ class AgentViewModel {
 
         GUIDELINES:
         - Be conversational and concise. Keep responses to 1-3 short paragraphs unless the user asks for detail.
+        - NEVER list choices in prose. If your next sentence would be "Are you thinking: X, Y, or Z?" or "Would you prefer A or B?" — STOP and call askUserQuestion with those options instead. The UI renders them as tappable buttons. Example: instead of writing "What's the occasion? Smart casual, casual, or business casual?", call askUserQuestion with question="What's the occasion?" and options=["Smart casual", "Casual", "Business casual"]. After calling askUserQuestion, end your turn — do not emit more text; the user's answer will arrive next turn.
         - Never invent items the user doesn't own. If you're unsure, search first.
         - Reference items by their type and color (e.g. "your navy blazer") rather than IDs.
         - When the user explicitly states a style preference or dislike, use updateStyleInsight to record it. Do not announce that you're recording it — just acknowledge naturally.
@@ -1005,9 +1055,11 @@ class AgentViewModel {
         case .conversational:
             return """
             - When the phrasing is AMBIGUOUS ("what should I wear today", "dress me up"), do NOT \
-            immediately call generateOutfit. Instead, explore with searchWardrobe first and discuss \
-            options before generating. EXCEPTION: if the user specifies a clear occasion AND has no \
-            ambiguous preferences AND weather conditions are moderate, you may generate directly.
+            immediately call generateOutfit. Instead, explore with searchWardrobe first; if a \
+            preference is still needed (occasion, formality, vibe), call askUserQuestion with \
+            button options — never ask in prose. EXCEPTION: if the user specifies a clear occasion \
+            AND has no ambiguous preferences AND weather conditions are moderate, you may generate \
+            directly.
             """
         case .direct, .lastUsed:
             return "- When the phrasing is AMBIGUOUS (\"what should I wear today\"), default to generateOutfit."

@@ -9,6 +9,7 @@ enum AgentToolName: String {
     case updateStyleInsight
     case editOutfit
     case suggestPurchases
+    case askUserQuestion
 }
 
 // MARK: - Parsed Tool Call (from Claude response)
@@ -98,6 +99,21 @@ struct SuggestPurchasesInput {
 
     init(from json: [String: Any]) {
         self.category = json["category"] as? String
+    }
+}
+
+struct AskUserQuestionInput {
+    let question: String
+    let options: [String]
+    let allowsOther: Bool
+    let multiSelect: Bool
+
+    init(from json: [String: Any]) {
+        self.question = (json["question"] as? String) ?? ""
+        let rawOptions = (json["options"] as? [String]) ?? []
+        self.options = Array(rawOptions.prefix(4))
+        self.allowsOther = (json["allow_other"] as? Bool) ?? true
+        self.multiSelect = (json["multi_select"] as? Bool) ?? false
     }
 }
 
