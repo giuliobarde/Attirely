@@ -10,6 +10,7 @@ enum AnthropicError: LocalizedError {
     case insufficientWardrobe
     case insufficientData
     case overloaded
+    case allSuggestionsDuplicate
 
     var errorDescription: String? {
         switch self {
@@ -29,6 +30,8 @@ enum AnthropicError: LocalizedError {
             return "Add more items to your wardrobe before generating outfits."
         case .insufficientData:
             return "Not enough wardrobe data for style analysis. Add more items."
+        case .allSuggestionsDuplicate:
+            return "Your wardrobe doesn't have a genuinely new combination for this request. Try adjusting the occasion or adding a new piece."
         }
     }
 }
@@ -425,6 +428,7 @@ struct AnthropicService {
     You are a personal stylist. Based on the clothing items listed below, suggest exactly 1 complete outfit combination.
 
     Rules:
+    - NOVELTY REQUIREMENT: If existing outfit combinations are listed below, your returned item_ids set must not exactly match any of them. Swap at least one item relative to every listed combination.
     - The outfit must have 3 to 6 items
     - Include exactly one pair of footwear (if available)
     - Include either one bottom OR one full body item (dress/jumpsuit), not both
@@ -446,7 +450,6 @@ struct AnthropicService {
       - Above 24°C: prioritize lightweight fabrics (linen, cotton), minimize layers
       - If precipitation chance > 50%, prefer items suitable for rain (avoid suede, prefer water-resistant outerwear)
       - If UV index > 6, consider accessories like hats
-    - If existing outfits are listed below, do NOT suggest the same item combination — create something different
 
     Return ONLY a valid JSON array with exactly one element. The element must have:
     - "name": a short, evocative outfit name (e.g., "Weekend Casual", "Office Ready", "Evening Out")
@@ -575,7 +578,7 @@ struct AnthropicService {
         var dedupSection = ""
         let relevantSets = existingOutfitItemSets.filter { !$0.isEmpty }
         if !relevantSets.isEmpty {
-            dedupSection = "\nEXISTING OUTFITS (do NOT suggest these combinations):\n"
+            dedupSection = "\nFORBIDDEN COMBINATIONS — your item_ids must not match any of these exactly:\n"
             for (index, ids) in relevantSets.prefix(20).enumerated() {
                 dedupSection += "  Outfit \(index + 1): [\(ids.joined(separator: ", "))]\n"
             }
@@ -590,11 +593,40 @@ struct AnthropicService {
 
         let fullPrompt = outfitGenerationPrompt + "\n\n" + contextSection + tagSection + "\nAvailable items:\n" + itemList + dedupSection
 
+        let firstPass = try await performOutfitGenerationRequest(prompt: fullPrompt, apiKey: apiKey)
+        let novelFirst = firstPass.filter { !OutfitSimilarity.isDuplicate(candidate: $0.itemIDs, existing: relevantSets) }
+        if !novelFirst.isEmpty {
+            return novelFirst
+        }
+
+        guard !relevantSets.isEmpty else {
+            return firstPass
+        }
+
+        // All suggestions duplicated an existing combination — retry once with explicit callout.
+        var rejectedSection = "\nRETRY NOTICE: Your previous response suggested the following combinations, but each matches an existing outfit and is FORBIDDEN:\n"
+        for (index, suggestion) in firstPass.enumerated() {
+            let sortedIDs = suggestion.itemIDs.sorted().joined(separator: ", ")
+            rejectedSection += "  Rejected \(index + 1): [\(sortedIDs)]\n"
+        }
+        rejectedSection += "Produce an outfit whose item_ids differ — swap at least one item so the set is not identical to any listed combination.\n"
+
+        let retryPrompt = fullPrompt + rejectedSection
+        let retryPass = try await performOutfitGenerationRequest(prompt: retryPrompt, apiKey: apiKey)
+        let novelRetry = retryPass.filter { !OutfitSimilarity.isDuplicate(candidate: $0.itemIDs, existing: relevantSets) }
+        if !novelRetry.isEmpty {
+            return novelRetry
+        }
+
+        throw AnthropicError.allSuggestionsDuplicate
+    }
+
+    private static func performOutfitGenerationRequest(prompt: String, apiKey: String) async throws -> [OutfitSuggestionDTO] {
         let requestBody: [String: Any] = [
             "model": model,
             "max_tokens": 2048,
             "messages": [
-                ["role": "user", "content": fullPrompt]
+                ["role": "user", "content": prompt]
             ]
         ]
 

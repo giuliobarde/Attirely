@@ -19,6 +19,11 @@ class AgentViewModel {
 
     private var history: [[String: Any]] = []
 
+    // Item-ID sets from outfits generated during the active chat session.
+    // Merged with saved-outfit sets when calling generateOutfits so the agent
+    // cannot repeat an outfit it produced earlier in the same conversation.
+    private var conversationGeneratedItemSets: [[String]] = []
+
     // MARK: - Dependencies (set via .onAppear)
 
     var modelContext: ModelContext?
@@ -338,9 +343,10 @@ class AgentViewModel {
             // Build observation context for prompt injection
             let observationPrompt = ObservationManager.promptString(from: observations, forOccasion: tier)
 
-            let existingItemSets = allOutfits.map { outfit in
+            let savedOutfitItemSets = allOutfits.map { outfit in
                 outfit.items.map { $0.id.uuidString }.sorted()
             }
+            let existingItemSets = savedOutfitItemSets + conversationGeneratedItemSets
 
             // Fetch outfit-scoped tags for AI auto-tagging
             let allTags = (try? modelContext?.fetch(FetchDescriptor<Tag>())) ?? []
@@ -392,6 +398,10 @@ class AgentViewModel {
                 pendingOutfitItems[outfit.id] = matchedItems
                 pendingOutfitTags[outfit.id] = resolvedTags
 
+                // Track this combination so subsequent turns in the same chat don't repeat it.
+                let generatedItemIDs = matchedItems.map { $0.id.uuidString }.sorted()
+                conversationGeneratedItemSets.append(generatedItemIDs)
+
                 // Merge client-side + AI wardrobe gap notes
                 let mergedGaps = OccasionFilter.mergeGaps(clientSide: filterResult.wardrobeGaps, aiSide: suggestion.wardrobeGaps)
                 outfit.wardrobeGaps = Outfit.encodeGaps(mergedGaps)
@@ -414,6 +424,9 @@ class AgentViewModel {
             """
 
             return (resultText, createdOutfits, [], nil)
+        } catch AnthropicError.allSuggestionsDuplicate {
+            let message = AnthropicError.allSuggestionsDuplicate.errorDescription ?? "No new outfit combination available."
+            return ("Every suggestion the stylist proposed duplicated an outfit the user already has. Tell the user: \(message)", [], [], nil)
         } catch {
             return ("Failed to generate outfit: \(error.localizedDescription)", [], [], nil)
         }
@@ -936,6 +949,7 @@ class AgentViewModel {
     func clearConversation() {
         messages = []
         history = []
+        conversationGeneratedItemSets = []
         pendingInsights = []
         pendingOutfitItems = [:]
         pendingOutfitTags = [:]
@@ -962,7 +976,7 @@ class AgentViewModel {
         - If you notice recurring patterns in the user's choices across the conversation (e.g., they always pick dark colors, avoid certain fabrics), record these as low-confidence insights.
 
         INTENT DETECTION — choosing the right tool:
-        - When the user wants something NEW, DIFFERENT, or a SURPRISE ("give me a new outfit", "surprise me", "something I haven't tried", "create an outfit for…"), use the generateOutfit tool.
+        - When the user wants something NEW, DIFFERENT, or a SURPRISE ("give me a new outfit", "surprise me", "something I haven't tried", "create an outfit for…"), use the generateOutfit tool. If you've already produced an outfit earlier in this conversation, vary the occasion, color palette, or anchor item on subsequent calls rather than repeating the same silhouette — the user expects a genuinely fresh combination each time.
         - When the user wants something FAMILIAR, a GO-TO, or PREVIOUSLY WORN ("what do I usually wear", "my go-to work outfit", "something I've worn before", "a classic", "what's my favorite…"), use the searchOutfits tool to find existing saved outfits.
         - When the user asks about specific ITEMS they own ("do I have any blazers?", "what blue tops do I have?"), use the searchWardrobe tool.
         - When the user wants to MODIFY an outfit — from this conversation OR a saved outfit they reference by name ("swap the shoes on my work outfit", "update my Casual Friday look", "add a blazer to my dinner outfit") — use the editOutfit tool. For saved outfits, a new variant is created and the original is preserved.
