@@ -147,7 +147,7 @@ class AgentViewModel {
             return
         }
 
-        let systemPrompt = buildSystemPrompt()
+        let cachedSystemPrompt = buildCachedSystemPrompt()
 
         do {
             var loopCount = 0
@@ -157,11 +157,16 @@ class AgentViewModel {
                 guard !Task.isCancelled else { break }
                 loopCount += 1
 
+                // Rebuild the fresh block every turn (weather/observations/pending insights
+                // may have changed). The cached block is stable across the session.
+                let freshSystemPrompt = buildFreshSystemPrompt()
+
                 // Stream one API turn
                 var accumulator = ContentBlockAccumulator()
                 let eventStream = try await AgentService.streamMessage(
                     history: history,
-                    systemPrompt: systemPrompt,
+                    cachedSystemPrompt: cachedSystemPrompt,
+                    freshSystemPrompt: freshSystemPrompt,
                     tools: AgentService.toolDefinitions,
                     apiKey: apiKey
                 )
@@ -190,7 +195,26 @@ class AgentViewModel {
                 let stopReason = accumulator.stopReason ?? "end_turn"
                 let toolCalls = accumulator.finishedToolCalls()
 
-                if stopReason == "end_turn" || toolCalls.isEmpty {
+                // Handle non-tool stop reasons: finalize (with a warning where relevant) and exit the loop.
+                if stopReason != "tool_use" {
+                    switch stopReason {
+                    case "end_turn", "stop_sequence":
+                        break
+                    case "max_tokens":
+                        setWarning(streamingID: streamingID, text: "Response was cut off (token limit).")
+                    case "refusal":
+                        setWarning(streamingID: streamingID, text: "Request declined.")
+                    case "pause_turn":
+                        setWarning(streamingID: streamingID, text: "Response paused.")
+                    default:
+                        break
+                    }
+                    finalizeStreamingMessage(streamingID: streamingID)
+                    break
+                }
+
+                // stop_reason == "tool_use" but no parseable tool calls — defensive exit to avoid looping.
+                if toolCalls.isEmpty {
                     finalizeStreamingMessage(streamingID: streamingID)
                     break
                 }
@@ -876,6 +900,11 @@ class AgentViewModel {
         messages[index].isStreaming = false
     }
 
+    private func setWarning(streamingID: UUID, text: String) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        messages[index].warning = text
+    }
+
     private func finalizeMessage(streamingID: UUID, text: String?) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
         messages[index].text = text
@@ -959,8 +988,14 @@ class AgentViewModel {
     }
 
     // MARK: - System Prompt
+    //
+    // The system prompt is split into two blocks so Anthropic's prompt cache can retain
+    // the stable prefix across turns. The cached block is stable within a session (guidelines,
+    // intent rules, mode behavior, comfort preferences, style mode). The fresh block holds
+    // anything that may mutate during a conversation (weather, style summary, counts,
+    // pending insights, behavioral observations).
 
-    private func buildSystemPrompt() -> String {
+    private func buildCachedSystemPrompt() -> String {
         var prompt = """
         You are the Attirely style agent — a warm, knowledgeable personal stylist who knows \
         this user's entire wardrobe. You help them decide what to wear, explore their style, \
@@ -990,17 +1025,10 @@ class AgentViewModel {
         // Mode-specific behavior block
         prompt += "\n\n\(modeBehaviorBlock)"
 
-        // Weather context
-        if let weather = weatherViewModel?.weatherContextString {
-            prompt += "\n\nCURRENT WEATHER:\n\(weather)"
-        } else {
-            prompt += "\n\nCURRENT WEATHER: Not available."
-        }
-
         // Temperature display preference — avoid degree symbol to prevent UTF-8 encoding corruption
         let preferredUnit = userProfile?.temperatureUnit ?? .celsius
         let unitLabel = preferredUnit == .fahrenheit ? "Fahrenheit (F)" : "Celsius (C)"
-        prompt += "\n\nTEMPERATURE DISPLAY: Weather data above is in Celsius. When mentioning temperatures in your responses, convert and display in \(unitLabel)."
+        prompt += "\n\nTEMPERATURE DISPLAY: Weather data is provided in Celsius. When mentioning temperatures in your responses, convert and display in \(unitLabel)."
 
         // Comfort preferences
         if let comfort = StyleContextHelper.comfortPreferencesString(from: userProfile) {
@@ -1019,6 +1047,19 @@ class AgentViewModel {
             case .expand:
                 prompt += "\n\nSTYLE MODE: Expand — when suggesting outfits or discussing style, stay true to the user's detected personal aesthetic rather than pushing toward a conventional ideal."
             }
+        }
+
+        return prompt
+    }
+
+    private func buildFreshSystemPrompt() -> String {
+        var prompt = ""
+
+        // Weather context
+        if let weather = weatherViewModel?.weatherContextString {
+            prompt += "CURRENT WEATHER:\n\(weather)"
+        } else {
+            prompt += "CURRENT WEATHER: Not available."
         }
 
         // Style summary

@@ -63,6 +63,22 @@ struct AgentMessageBubble: View {
                     .textSelection(.enabled)
             }
 
+            // Warning pill (truncation, refusal, pause)
+            if let warning = message.warning {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
             // Outfit cards
             ForEach(message.outfits) { outfit in
                 VStack(alignment: .leading, spacing: 8) {

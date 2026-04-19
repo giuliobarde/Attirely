@@ -3,20 +3,39 @@ import Foundation
 struct AgentService {
 
     private static let model = "claude-sonnet-4-20250514"
-    private static let maxTokens = 2048
+    private static let maxTokens = 4096
+
+    // Build a structured `system` array so the stable prefix can be cached by Anthropic.
+    // A single `cache_control: {"type": "ephemeral"}` breakpoint on the cached block caches
+    // tools + the cached system block together.
+    private static func buildSystemBlocks(
+        cached: String,
+        fresh: String
+    ) -> [[String: Any]] {
+        var blocks: [[String: Any]] = [[
+            "type": "text",
+            "text": cached,
+            "cache_control": ["type": "ephemeral"]
+        ]]
+        if !fresh.isEmpty {
+            blocks.append(["type": "text", "text": fresh])
+        }
+        return blocks
+    }
 
     // MARK: - Send Message (single API call, no loop)
 
     static func sendMessage(
         history: [[String: Any]],
-        systemPrompt: String,
+        cachedSystemPrompt: String,
+        freshSystemPrompt: String,
         tools: [[String: Any]],
         apiKey: String
     ) async throws -> AgentTurn {
         let body: [String: Any] = [
             "model": model,
             "max_tokens": maxTokens,
-            "system": systemPrompt,
+            "system": buildSystemBlocks(cached: cachedSystemPrompt, fresh: freshSystemPrompt),
             "tools": tools,
             "messages": history
         ]
@@ -53,14 +72,15 @@ struct AgentService {
 
     static func streamMessage(
         history: [[String: Any]],
-        systemPrompt: String,
+        cachedSystemPrompt: String,
+        freshSystemPrompt: String,
         tools: [[String: Any]],
         apiKey: String
     ) async throws -> AsyncThrowingStream<SSEEvent, Error> {
         let body: [String: Any] = [
             "model": model,
             "max_tokens": maxTokens,
-            "system": systemPrompt,
+            "system": buildSystemBlocks(cached: cachedSystemPrompt, fresh: freshSystemPrompt),
             "tools": tools,
             "messages": history
         ]
