@@ -289,10 +289,10 @@ struct AgentMessageBubble: View {
 
     private var streamingIndicator: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(thinkingPhrases[phraseIndex % thinkingPhrases.count])
+            Text(indicatorText)
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondaryText)
-                .id(phraseIndex)
+                .id(indicatorText)
                 .transition(.opacity)
 
             HStack(spacing: 4) {
@@ -319,10 +319,17 @@ struct AgentMessageBubble: View {
                 .stroke(Theme.cardBorder, lineWidth: 0.5)
         )
         .onReceive(Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()) { _ in
+            guard message.retryStatus == nil, message.toolStatus == nil else { return }
             withAnimation(.easeInOut(duration: 0.4)) {
                 phraseIndex += 1
             }
         }
+    }
+
+    private var indicatorText: String {
+        if let retry = message.retryStatus { return retry }
+        if let tool = message.toolStatus { return tool }
+        return thinkingPhrases[phraseIndex % thinkingPhrases.count]
     }
 
     // MARK: - Wardrobe Item List

@@ -137,6 +137,15 @@ class AgentViewModel {
 
     // MARK: - Conversation Loop (Streaming)
 
+    // Hard cap on tool-use iterations. Raised from 5 so legitimate long tool chains
+    // (e.g. suggestPurchases → searchWardrobe → generateOutfit → respond) don't get
+    // cut off. The real guard is the repeat detector in the loop body.
+    private static let maxLoops = 10
+
+    // Exponential backoff for retryable transient errors. Max 3 attempts total.
+    private static let retryDelaysNs: [UInt64] = [1_000_000_000, 3_000_000_000, 7_000_000_000]
+    private static let maxRetryAttempts = 3
+
     private func runConversationLoop(streamingID: UUID) async {
         let apiKey: String
         do {
@@ -151,40 +160,30 @@ class AgentViewModel {
 
         do {
             var loopCount = 0
-            let maxLoops = 5
+            var seenCallSignatures: Set<String> = []
+            var wrapUpMode = false
+            var completedNormally = false
 
-            while loopCount < maxLoops {
+            while loopCount < Self.maxLoops {
                 guard !Task.isCancelled else { break }
                 loopCount += 1
+
+                // Clear per-turn transient UI state (previous turn's tool phrase, etc.)
+                clearToolStatus(streamingID: streamingID)
 
                 // Rebuild the fresh block every turn (weather/observations/pending insights
                 // may have changed). The cached block is stable across the session.
                 let freshSystemPrompt = buildFreshSystemPrompt()
+                let toolsForTurn: [[String: Any]] = wrapUpMode ? [] : AgentService.toolDefinitions
 
-                // Stream one API turn
-                var accumulator = ContentBlockAccumulator()
-                let eventStream = try await AgentService.streamMessage(
+                let accumulator = try await streamOneTurn(
                     history: history,
                     cachedSystemPrompt: cachedSystemPrompt,
                     freshSystemPrompt: freshSystemPrompt,
-                    tools: AgentService.toolDefinitions,
-                    apiKey: apiKey
+                    tools: toolsForTurn,
+                    apiKey: apiKey,
+                    streamingID: streamingID
                 )
-
-                for try await event in eventStream {
-                    if Task.isCancelled { break }
-
-                    accumulator.apply(event)
-
-                    switch event {
-                    case .textDelta(_, let text):
-                        appendTextToStreamingMessage(streamingID: streamingID, delta: text)
-                    case .messageStop:
-                        break
-                    default:
-                        break
-                    }
-                }
 
                 guard !Task.isCancelled else { break }
 
@@ -195,8 +194,10 @@ class AgentViewModel {
                 let stopReason = accumulator.stopReason ?? "end_turn"
                 let toolCalls = accumulator.finishedToolCalls()
 
-                // Handle non-tool stop reasons: finalize (with a warning where relevant) and exit the loop.
-                if stopReason != "tool_use" {
+                // Non-tool stop reasons, or a wrap-up turn finishing: exit cleanly.
+                // (During wrap-up mode tools=[] so the model can't legitimately call tools;
+                // if it somehow does, treat it as a normal exit to avoid an infinite loop.)
+                if stopReason != "tool_use" || wrapUpMode {
                     switch stopReason {
                     case "end_turn", "stop_sequence":
                         break
@@ -210,13 +211,26 @@ class AgentViewModel {
                         break
                     }
                     finalizeStreamingMessage(streamingID: streamingID)
+                    completedNormally = true
                     break
                 }
 
                 // stop_reason == "tool_use" but no parseable tool calls — defensive exit to avoid looping.
                 if toolCalls.isEmpty {
                     finalizeStreamingMessage(streamingID: streamingID)
+                    completedNormally = true
                     break
+                }
+
+                // Runaway detector: if a (tool, normalized_input) tuple repeats within
+                // this conversation turn, fall back to a wrap-up turn next iteration.
+                var hadRepeat = false
+                for call in toolCalls {
+                    let sig = signatureFor(call)
+                    if !seenCallSignatures.insert(sig).inserted {
+                        hadRepeat = true
+                        print("[AgentRunaway] Repeat call detected: \(call.name.rawValue) input=\(sig)")
+                    }
                 }
 
                 // Execute tools and collect results
@@ -285,6 +299,30 @@ class AgentViewModel {
                         question: pendingQuestion
                     )
                 }
+
+                if hadRepeat {
+                    wrapUpMode = true
+                    print("[AgentRunaway] Entering wrap-up mode after repeat")
+                }
+            }
+
+            // Safety-net wrap-up: if we hit maxLoops while the model was still in tool-use,
+            // issue one final call with tools:[] so the model produces a clean text close-out.
+            if !completedNormally && !Task.isCancelled && loopCount >= Self.maxLoops && !wrapUpMode {
+                print("[AgentRunaway] Hit maxLoops=\(Self.maxLoops) — forcing wrap-up turn")
+                clearToolStatus(streamingID: streamingID)
+                let freshSystemPrompt = buildFreshSystemPrompt()
+                let accumulator = try await streamOneTurn(
+                    history: history,
+                    cachedSystemPrompt: cachedSystemPrompt,
+                    freshSystemPrompt: freshSystemPrompt,
+                    tools: [],
+                    apiKey: apiKey,
+                    streamingID: streamingID
+                )
+                let assistantContent = accumulator.rawAssistantContent()
+                history.append(["role": "assistant", "content": assistantContent])
+                finalizeStreamingMessage(streamingID: streamingID)
             }
         } catch {
             if !Task.isCancelled {
@@ -299,6 +337,91 @@ class AgentViewModel {
         }
 
         isSending = false
+    }
+
+    // Stream one API turn with retry + backoff on transient errors. Retries only while
+    // no text delta has been emitted yet this turn — once the bubble starts filling in,
+    // restarting would visibly rewind the user's screen.
+    private func streamOneTurn(
+        history: [[String: Any]],
+        cachedSystemPrompt: String,
+        freshSystemPrompt: String,
+        tools: [[String: Any]],
+        apiKey: String,
+        streamingID: UUID
+    ) async throws -> ContentBlockAccumulator {
+        var attempt = 0
+
+        while true {
+            attempt += 1
+            clearRetryStatus(streamingID: streamingID)
+
+            var accumulator = ContentBlockAccumulator()
+            var anyTextEmitted = false
+
+            do {
+                let eventStream = try await AgentService.streamMessage(
+                    history: history,
+                    cachedSystemPrompt: cachedSystemPrompt,
+                    freshSystemPrompt: freshSystemPrompt,
+                    tools: tools,
+                    apiKey: apiKey
+                )
+
+                for try await event in eventStream {
+                    if Task.isCancelled { break }
+
+                    accumulator.apply(event)
+
+                    switch event {
+                    case .textDelta(_, let text):
+                        anyTextEmitted = true
+                        appendTextToStreamingMessage(streamingID: streamingID, delta: text)
+                    case .toolUseStart(_, _, let name):
+                        setToolStatus(streamingID: streamingID, name: name)
+                    case .messageStop:
+                        break
+                    default:
+                        break
+                    }
+                }
+
+                return accumulator
+            } catch {
+                if Task.isCancelled { throw error }
+                if anyTextEmitted { throw error }
+                guard attempt < Self.maxRetryAttempts, isRetryable(error) else {
+                    throw error
+                }
+
+                let delay = Self.retryDelaysNs[min(attempt - 1, Self.retryDelaysNs.count - 1)]
+                setRetryStatus(
+                    streamingID: streamingID,
+                    text: "Retrying… (attempt \(attempt + 1)/\(Self.maxRetryAttempts))"
+                )
+                try await Task.sleep(nanoseconds: delay)
+            }
+        }
+    }
+
+    private func isRetryable(_ error: Error) -> Bool {
+        switch error {
+        case AnthropicError.overloaded, AnthropicError.networkError:
+            return true
+        case AnthropicError.apiError(let code, _):
+            return code == 429 || (500..<600).contains(code)
+        default:
+            return false
+        }
+    }
+
+    private func signatureFor(_ call: ToolUseBlock) -> String {
+        let data = (try? JSONSerialization.data(
+            withJSONObject: call.inputJSON,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )) ?? Data()
+        let json = String(data: data, encoding: .utf8) ?? ""
+        return "\(call.name.rawValue)|\(json)"
     }
 
     // MARK: - Tool Execution
@@ -890,6 +1013,8 @@ class AgentViewModel {
         if messages[index].text == nil {
             messages[index].text = effectiveDelta
             messages[index].isStreaming = false // hide dots once first token arrives
+            messages[index].toolStatus = nil
+            messages[index].retryStatus = nil
         } else {
             messages[index].text?.append(effectiveDelta)
         }
@@ -898,11 +1023,46 @@ class AgentViewModel {
     private func finalizeStreamingMessage(streamingID: UUID) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
         messages[index].isStreaming = false
+        messages[index].toolStatus = nil
+        messages[index].retryStatus = nil
     }
 
     private func setWarning(streamingID: UUID, text: String) {
         guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
         messages[index].warning = text
+    }
+
+    private func setToolStatus(streamingID: UUID, name: String) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        messages[index].toolStatus = phraseForTool(name)
+    }
+
+    private func clearToolStatus(streamingID: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        messages[index].toolStatus = nil
+    }
+
+    private func setRetryStatus(streamingID: UUID, text: String) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        messages[index].retryStatus = text
+    }
+
+    private func clearRetryStatus(streamingID: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == streamingID }) else { return }
+        messages[index].retryStatus = nil
+    }
+
+    private func phraseForTool(_ name: String) -> String? {
+        switch name {
+        case "searchWardrobe":     return "Searching your wardrobe…"
+        case "searchOutfits":      return "Looking through your saved outfits…"
+        case "generateOutfit":     return "Building an outfit…"
+        case "editOutfit":         return "Reworking the outfit…"
+        case "suggestPurchases":   return "Considering what to add…"
+        case "updateStyleInsight": return nil
+        case "askUserQuestion":    return nil
+        default:                   return nil
+        }
     }
 
     private func finalizeMessage(streamingID: UUID, text: String?) {

@@ -16,6 +16,8 @@ struct ChatMessage: Identifiable {
     var question: AgentQuestion?
     var warning: String?
     var isStreaming: Bool
+    var toolStatus: String?
+    var retryStatus: String?
     let timestamp: Date
 
     init(
@@ -29,6 +31,8 @@ struct ChatMessage: Identifiable {
         question: AgentQuestion? = nil,
         warning: String? = nil,
         isStreaming: Bool = false,
+        toolStatus: String? = nil,
+        retryStatus: String? = nil,
         timestamp: Date = Date()
     ) {
         self.id = id
@@ -41,6 +45,8 @@ struct ChatMessage: Identifiable {
         self.question = question
         self.warning = warning
         self.isStreaming = isStreaming
+        self.toolStatus = toolStatus
+        self.retryStatus = retryStatus
         self.timestamp = timestamp
     }
 }

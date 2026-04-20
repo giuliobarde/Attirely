@@ -44,9 +44,14 @@ Files touched: [AgentViewModel.swift](Attirely/ViewModels/AgentViewModel.swift),
 - **Problem**: [AgentViewModel.swift:268](Attirely/ViewModels/AgentViewModel.swift#L268) shows "Claude overloaded" as a dead-end.
 - **Change**: exponential backoff (1s, 3s, 7s) with a visible "retrying…" state in the bubble. Max 3 attempts.
 
-### 2.3 Handle `maxLoops = 5` cutoff gracefully
-- **Problem**: [AgentViewModel.swift:154](AgentViewModel.swift#L154) silently stops at 5 iterations.
-- **Change**: inject a synthetic tool_result ("max iterations reached — summarize with what you have") so the model finalizes cleanly. Log occurrences to catch prompt/tool bugs.
+### 2.3 Replace `maxLoops = 5` with a runaway guard + wrap-up turn
+- **Problem**: [AgentViewModel.swift:154](Attirely/ViewModels/AgentViewModel.swift#L154) silently stops at 5 iterations. A flat iteration cap conflates two different failures: a legitimate long tool chain (e.g. `suggestPurchases` → `searchWardrobe` → `generateOutfit` → respond) and a true runaway (model calling the same tool with the same input over and over). Punishing the former to catch the latter is the wrong shape.
+- **Change**:
+  1. Raise the hard cap from 5 → 10 as a last-resort safety net (never expected to hit).
+  2. Add the real runaway guard: track `(toolName, normalized(inputJSON))` tuples within a single conversation loop. If the same call repeats, break immediately.
+  3. On either trigger, make **one final API call with `tools: []`** so the model produces a clean text wrap-up. No fake tool_result, no history pollution — an empty tools list is a legitimate API shape.
+  4. Log every trigger with tool name + normalized input so repeat bugs are debuggable.
+- **Why not the synthetic tool_result approach**: it lies to the model, pollutes history (hurting prompt-cache hit rate on subsequent turns), and still doesn't distinguish "legit long chain" from "buggy infinite loop".
 
 ---
 
