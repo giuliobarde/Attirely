@@ -142,6 +142,7 @@ Worker source lives in `/backend/` at the repo root (separate from the Xcode pro
 - **v0.10.2** — Outfit detection at scan time, "Use Existing" duplicate linking, footwear nudge
 - **v0.10.3** — "Build an Outfit Around This" anchor item feature: wardrobe and start-fresh modes, multi-outfit generation (1–4, Claude-determined), collapsible outfit cards. Entry point on `ItemDetailView`. New: `AnchorOutfitResultDTO`, `AnchorOutfitBuilderViewModel`, `AnchorOutfitBuilderView`, `AnthropicService.generateAnchoredOutfits()`
 - **v0.10.4** — "What should I buy?" agent quick option: new `suggestPurchases` tool, `PurchaseSuggestionDTO`, `AnthropicService.suggestPurchases()`. Purchase cards in `AgentMessageBubble` with compatibility count, pairs-with list, and "Style an outfit around this" pipe-in button
+- **v0.10.5** — Agent plumbing split + ID-addressed tool inputs. `AgentViewModel` shrinks from 1119 → ~360 lines as an observable facade; heavy logic moves into `AgentConversationLoop` (SSE loop + history), `AgentToolExecutor` (7 tools), `AgentPromptBuilder` (cached + fresh system prompt), `OutfitMatcher` (alias + fuzzy resolution). VM conforms to `AgentToolHost` + `AgentLoopHost`. `generateOutfit` gains `must_include_item_ids`; `editOutfit` gains `outfit_id`, `remove_item_ids`, `add_item_ids` (6-hex UUID prefix aliases). Free-form descriptions retained as fallback. Wardrobe alias index inlined in system prompt when wardrobe ≤ 40 items.
 
 ## Roadmap
 

@@ -16,7 +16,7 @@ Files touched: [AgentViewModel.swift](Attirely/ViewModels/AgentViewModel.swift),
 
 ---
 
-## Priority 1 — ship first (highest ROI)
+## Priority 1 — ship first (highest ROI) (COMPLETED)
 
 ### 1.1 Add prompt caching
 - **Problem**: the full system prompt (guidelines + intent detection + mode block + weather + style summary + observations + wardrobe counts) is re-tokenized every turn. Tool definitions are ~3 KB of stable text re-sent on every call.
@@ -34,7 +34,7 @@ Files touched: [AgentViewModel.swift](Attirely/ViewModels/AgentViewModel.swift),
 
 ---
 
-## Priority 2 — UX polish
+## Priority 2 — UX polish (COMPLETED)
 
 ### 2.1 Stream tool-use status to the UI
 - **Problem**: `isStreaming` flips false on first text delta ([AgentMessageBubble.swift:57](Attirely/Views/AgentMessageBubble.swift#L57)). When the model goes straight to a tool without preamble, users stare at thinking dots.
@@ -66,11 +66,18 @@ CLAUDE.md rules out view models beyond ~200 lines. Extract:
 
 The view model should only own observable state and delegate.
 
-### 3.2 Address item-matching correctness risk
-- **Problem**: [matchItem](Attirely/ViewModels/AgentViewModel.swift#L808-L833) uses fuzzy word overlap. No UUIDs are exposed to the agent. Two navy blazers → `max(by: score)` picks arbitrarily.
+### 3.2 Address item-matching correctness risk (ID-addressed agent tools)
+- **Problem**: [matchItem](Attirely/ViewModels/AgentViewModel.swift#L955-L980) uses fuzzy word overlap. UUIDs exist on `ClothingItem` and already flow through `generateOutfits`/`generateAnchoredOutfits`, but the agent-tool surface (`must_include_items`, `editOutfit.remove_items`/`add_items`/`outfit_name`) still accepts free-form descriptions. Two navy blazers → `max(by: score)` at [AgentViewModel.swift:979](Attirely/ViewModels/AgentViewModel.swift#L979) picks arbitrarily.
+- **Scope discipline — this is a boundary change, not a major refactor.** UUIDs are already in the model. Infrastructure (UUID fast-path in `matchItem` at [line 956-964](Attirely/ViewModels/AgentViewModel.swift#L956-L964), ID-based generation, `mustIncludeItemIDs` plumbing) already exists. The real work is ~3 files: tool schemas, tool-result formatters, input DTOs.
 - **Change**:
-  1. Expose short deterministic IDs to the agent in tool results (e.g. `[a3f]` prefix) and parse them back (scaffolding already at [line 811](Attirely/ViewModels/AgentViewModel.swift#L811)).
-  2. Return matches as structured JSON in `tool_result.content` instead of prose, so the model reasons over typed data.
+  1. **Short aliases, not full UUIDs.** A 36-char UUID × ~35 candidates is ~350 wasted prompt tokens per turn. Use a per-conversation alias (`I1`, `I2`… or 6-hex prefix). Keep full UUIDs internal; resolve aliases at the agent-tool boundary. ([matchItem:956-964](Attirely/ViewModels/AgentViewModel.swift#L956-L964) already has scaffolding for UUID-token parsing — extend for aliases.)
+  2. **Expose IDs in tool results.** Update `executeSearchWardrobe` ([line 674](Attirely/ViewModels/AgentViewModel.swift#L674)) and `executeSearchOutfits` ([line 624](Attirely/ViewModels/AgentViewModel.swift#L624)) to prefix each row with its alias so subsequent turns can cite it. Consider returning structured JSON in `tool_result.content` instead of prose so the model reasons over typed data.
+  3. **Accept IDs in tool inputs.** Add parallel `*_ids` fields to `GenerateOutfitInput.mustIncludeItems` and `EditOutfitInput.remove_items`/`add_items`/`outfit_name` ([AgentToolDTO.swift:40,82-95](Attirely/Models/AgentToolDTO.swift#L40)); update the tool JSON schemas in [AgentService.swift:116-124,220-246](Attirely/Services/AgentService.swift#L116-L124).
+  4. **Keep word-matching as fallback, not preferred path.** `applyItemEdits` ([line 911](Attirely/ViewModels/AgentViewModel.swift#L911)) and `resolveOutfit` ([line 883](Attirely/ViewModels/AgentViewModel.swift#L883)) should try ID first, fall back to fuzzy when no alias parses. Removing the fallback entirely will regress any case where the model references an item it never searched.
+  5. **Drill the UX distinction in the prompt.** IDs are for tool-call plumbing only — never user-facing. The existing "reference items by type and color" rule at [AgentViewModel.swift:1168](Attirely/ViewModels/AgentViewModel.swift#L1168) must be strengthened or the agent will leak `I3` into prose.
+  6. **Round-trip requirement.** Claude can only cite an ID it has seen. System prompt currently lists wardrobe counts only ([line 1230](Attirely/ViewModels/AgentViewModel.swift#L1230)). Either (a) enforce search-first via tool-result structure, or (b) inline a compact `alias|type|color` index in the fresh system prompt. Choose based on wardrobe size — inlining is fine up to ~40 items, search-first scales better.
+- **Files**: [AgentToolDTO.swift](Attirely/Models/AgentToolDTO.swift), [AgentService.swift](Attirely/Services/AgentService.swift) (tool schemas), [AgentViewModel.swift](Attirely/ViewModels/AgentViewModel.swift) (result formatters, `applyItemEdits`, `resolveOutfit`, `matchItem`, system-prompt rules). Also stale doc claims in [CLAUDE.md](CLAUDE.md), [.claude/rules/api-integration.md](.claude/rules/api-integration.md), [AGENTS.md](AGENTS.md) — "fuzzy item matching via word overlap scoring" becomes the fallback, not the primary path.
+- **Not a blocker for Priority 1.** Sequence after caching + token bump + `stop_reason` handling — those have bigger latency/cost impact. This is a correctness win with a narrower blast radius.
 
 ### 3.3 History compaction
 - **Problem**: `history` in [AgentViewModel.swift:20](Attirely/ViewModels/AgentViewModel.swift#L20) grows unbounded. 15 turns with tool calls = 40+ blocks.

@@ -107,7 +107,8 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 Ideas and priorities discussed during design sessions. Items marked ✅ are implemented.
 
 ## Implemented
-- ✅ **editOutfit on saved outfits creates a copy** (v0.10.5): `resolveOutfit` now searches `allOutfits` as a final fallback; editing a saved outfit creates a new pending variant instead of mutating in place. Original is never touched.
+- ✅ **editOutfit on saved outfits creates a copy** (v0.10.5): `OutfitMatcher.resolveOutfit` searches `allOutfits` as a final fallback; editing a saved outfit produces a new pending variant instead of mutating in place. Original is never touched.
+- ✅ **Agent plumbing split + ID-addressed tool inputs** (v0.10.5): `AgentViewModel` is now a ~360-line observable facade conforming to `AgentToolHost` + `AgentLoopHost`. SSE loop in `AgentConversationLoop`, tool execution in `AgentToolExecutor`, prompts in `AgentPromptBuilder`, item/outfit resolution in `OutfitMatcher`. `generateOutfit`/`editOutfit` accept 6-hex UUID prefix aliases (`must_include_item_ids`, `outfit_id`, `remove_item_ids`, `add_item_ids`); free-form descriptions retained as fallback for first-turn cases where Claude hasn't yet seen an alias.
 
 ## High Priority
 - **Item images in `searchWardrobe` results** — Claude currently sees only text attributes. Passing item images as base64 content blocks in tool results would meaningfully improve styling advice quality.

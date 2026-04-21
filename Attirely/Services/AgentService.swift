@@ -98,9 +98,9 @@ struct AgentService {
                 Generate a complete outfit from the user's wardrobe based on current weather \
                 and preferences. Call this when the user asks for outfit suggestions, asks what \
                 to wear, or requests an outfit for a specific occasion. When the user wants an \
-                outfit built around specific items, use must_include_items to anchor the generation \
-                on those pieces. Use searchWardrobe first to verify items exist. Returns a styled \
-                outfit with reasoning.
+                outfit built around specific items, prefer must_include_item_ids (6-char aliases \
+                from searchWardrobe results or the wardrobe index) over must_include_items. \
+                Returns a styled outfit with reasoning.
                 """,
             "input_schema": [
                 "type": "object",
@@ -113,13 +113,24 @@ struct AgentService {
                         "type": "string",
                         "description": "Optional freeform styling constraints from the conversation, e.g. 'avoid heavy fabrics', 'include the navy jacket', 'something comfortable'."
                     ],
+                    "must_include_item_ids": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": """
+                            Preferred. 6-character hex aliases of items that MUST appear in the \
+                            generated outfit (e.g., 'a3f91c', '4c8a11'). Use aliases from \
+                            searchWardrobe results or the inlined wardrobe index. Deterministic — \
+                            resolves the exact item even when colors/types collide.
+                            """
+                    ],
                     "must_include_items": [
                         "type": "array",
                         "items": ["type": "string"],
                         "description": """
-                            Item descriptions that MUST appear in the generated outfit (e.g., \
-                            'black leather jacket', 'red dress'). Use searchWardrobe first to \
-                            verify items exist, then reference them here by type and color.
+                            Fallback. Free-form item descriptions (e.g., 'black leather jacket') \
+                            — used only when you haven't seen aliases yet. Matched fuzzily; may \
+                            pick the wrong one when the user owns multiple similar items. Prefer \
+                            must_include_item_ids whenever possible.
                             """
                     ]
                 ],
@@ -212,27 +223,41 @@ struct AgentService {
                 rename it, or change its occasion. For saved outfits, your edit is shown as a \
                 proposed variant; the user picks whether to update the original or save it as a \
                 new outfit via buttons under the card. Just perform the edit — never describe it \
-                as a failure, as 'not applied', or as a manual copy. Reference outfits by name or \
-                occasion (e.g. 'my Work Monday outfit', 'the cocktail look'). Reference items by \
-                type and color (e.g. 'the sneakers', 'navy blazer'). Use the most recently shown \
-                outfit if the user doesn't specify.
+                as a failure, as 'not applied', or as a manual copy. Prefer outfit_id / \
+                remove_item_ids / add_item_ids (6-char aliases from search results); fall back to \
+                outfit_name / remove_items / add_items only when you haven't seen the aliases. \
+                Use the most recently shown outfit if the user doesn't specify.
                 """,
             "input_schema": [
                 "type": "object",
                 "properties": [
+                    "outfit_id": [
+                        "type": "string",
+                        "description": "Preferred. 6-character hex alias of the outfit to edit (from searchOutfits results or a generated outfit's tool-result summary)."
+                    ],
                     "outfit_name": [
                         "type": "string",
-                        "description": "Name or description of the outfit to edit. Use the most recently shown outfit if ambiguous."
+                        "description": "Fallback. Name/description of the outfit to edit — used only when you haven't seen the alias. Use the most recently shown outfit if ambiguous."
+                    ],
+                    "remove_item_ids": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Preferred. 6-character hex aliases of items to remove from the outfit."
                     ],
                     "remove_items": [
                         "type": "array",
                         "items": ["type": "string"],
-                        "description": "Item descriptions to remove (e.g. 'the sneakers', 'white t-shirt'). Matched by type and color."
+                        "description": "Fallback. Free-form descriptions of items to remove (e.g. 'the sneakers'). Matched fuzzily — may pick wrong when duplicates exist."
+                    ],
+                    "add_item_ids": [
+                        "type": "array",
+                        "items": ["type": "string"],
+                        "description": "Preferred. 6-character hex aliases of wardrobe items to add to the outfit."
                     ],
                     "add_items": [
                         "type": "array",
                         "items": ["type": "string"],
-                        "description": "Wardrobe item descriptions to add (e.g. 'Chelsea boots', 'blue blazer'). Matched against the user's wardrobe by type and color."
+                        "description": "Fallback. Free-form descriptions of wardrobe items to add (e.g. 'Chelsea boots'). Matched fuzzily — may pick wrong when duplicates exist."
                     ],
                     "new_name": [
                         "type": "string",
@@ -243,7 +268,7 @@ struct AgentService {
                         "description": "Optional new occasion for the outfit."
                     ]
                 ],
-                "required": ["outfit_name"]
+                "required": [] as [String]
             ]
         ],
         [
