@@ -109,13 +109,13 @@ Ideas and priorities discussed during design sessions. Items marked ✅ are impl
 ## Implemented
 - ✅ **editOutfit on saved outfits creates a copy** (v0.10.5): `OutfitMatcher.resolveOutfit` searches `allOutfits` as a final fallback; editing a saved outfit produces a new pending variant instead of mutating in place. Original is never touched.
 - ✅ **Agent plumbing split + ID-addressed tool inputs** (v0.10.5): `AgentViewModel` is now a ~360-line observable facade conforming to `AgentToolHost` + `AgentLoopHost`. SSE loop in `AgentConversationLoop`, tool execution in `AgentToolExecutor`, prompts in `AgentPromptBuilder`, item/outfit resolution in `OutfitMatcher`. `generateOutfit`/`editOutfit` accept 6-hex UUID prefix aliases (`must_include_item_ids`, `outfit_id`, `remove_item_ids`, `add_item_ids`); free-form descriptions retained as fallback for first-turn cases where Claude hasn't yet seen an alias.
+- ✅ **History compaction + parallel tool execution** (v0.10.6): `AgentConversationLoop` elides `tool_result.content` in turns older than the last 3 user messages (placeholder preserves `tool_use_id` pairing per Anthropic API). Read-only tools (`searchWardrobe`, `searchOutfits`, `suggestPurchases`) dispatch via `withTaskGroup`; mutating tools remain sequential. Outcomes keyed by `tool_use_id` and reassembled in the model's original call order.
 
 ## High Priority
 - **Item images in `searchWardrobe` results** — Claude currently sees only text attributes. Passing item images as base64 content blocks in tool results would meaningfully improve styling advice quality.
 - **Fix `searchOutfits` to use OR/score logic** — currently uses `allSatisfy` (AND), so multi-word queries like "casual summer" fail if either word is absent. Should use the same word-scoring approach as `searchWardrobe`.
 
 ## Medium Priority
-- **Parallelize independent tool calls** — the `for call in toolCalls` loop in `runConversationLoop` is sequential. Read-only tools (`searchWardrobe`, `searchOutfits`) called in the same turn could run concurrently with `async let` or a `TaskGroup`, reducing latency on multi-tool turns.
 - **`getWardrobeGaps` tool** — gap analysis currently only surfaces as a side effect of `generateOutfit`. A dedicated tool would let the user ask "what's missing from my wardrobe for summer?" without triggering a full outfit generation.
 - **Outfit suggestion feedback loop** — track whether a suggested outfit was saved or dismissed, feed signal back into `updateStyleInsight` automatically. Currently no behavioral signal flows from save/dismiss back to the model.
 

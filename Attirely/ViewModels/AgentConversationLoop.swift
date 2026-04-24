@@ -46,6 +46,31 @@ final class AgentConversationLoop {
     private static let retryDelaysNs: [UInt64] = [1_000_000_000, 3_000_000_000, 7_000_000_000]
     private static let maxRetryAttempts = 3
 
+    // Rolling-window compaction: keep tool_result content for the last N user turns
+    // verbatim; older tool_result blocks get their content replaced with a placeholder.
+    // Tool_use_id pairing is preserved so the Anthropic API stays happy.
+    private static let recentToolResultTurnsKept = 3
+    private static let elidedToolResultPlaceholder = "[tool result elided to save tokens]"
+
+    // Tools that don't mutate host state — safe to run concurrently via TaskGroup.
+    // Real concurrency benefit only materializes for async tools with suspend points
+    // (suggestPurchases' HTTP call); the synchronous searches still serialize on MainActor
+    // but cost nothing extra to dispatch through the group.
+    private static let parallelSafeTools: Set<AgentToolName> = [.searchWardrobe, .searchOutfits, .suggestPurchases]
+
+    // Aggregated outcome of a single tool call, keyed for deterministic reassembly
+    // after parallel execution. `@unchecked Sendable` because `resultBlock` is [String: Any]
+    // (required by the Anthropic wire format); access is MainActor-only in practice.
+    private struct ToolOutcome: @unchecked Sendable {
+        let toolUseID: String
+        let resultBlock: [String: Any]
+        let outfits: [Outfit]
+        let items: [ClothingItem]
+        let insightNote: String?
+        let purchaseSuggestions: [PurchaseSuggestionDTO]
+        let question: AgentQuestion?
+    }
+
     // API message history, preserved across turns within a conversation.
     private(set) var history: [[String: Any]] = []
 
@@ -140,6 +165,31 @@ final class AgentConversationLoop {
                     }
                 }
 
+                // Partition calls: read-only tools run concurrently; mutating ones stay sequential.
+                let parallelCalls = toolCalls.filter { Self.parallelSafeTools.contains($0.name) }
+                let sequentialCalls = toolCalls.filter { !Self.parallelSafeTools.contains($0.name) }
+                var outcomes: [String: ToolOutcome] = [:]
+
+                if !parallelCalls.isEmpty {
+                    await withTaskGroup(of: ToolOutcome.self) { group in
+                        for call in parallelCalls {
+                            group.addTask {
+                                await self.runOneToolCall(call, host: host, streamingID: streamingID)
+                            }
+                        }
+                        for await outcome in group {
+                            outcomes[outcome.toolUseID] = outcome
+                        }
+                    }
+                }
+
+                for call in sequentialCalls {
+                    let outcome = await runOneToolCall(call, host: host, streamingID: streamingID)
+                    outcomes[call.toolUseID] = outcome
+                }
+
+                // Reassemble in the model's original call order so UI ordering is stable
+                // and tool_result blocks follow the tool_use sequence on the wire.
                 var toolResultBlocks: [[String: Any]] = []
                 var outfits: [Outfit] = []
                 var foundItems: [ClothingItem] = []
@@ -148,45 +198,17 @@ final class AgentConversationLoop {
                 var pendingQuestion: AgentQuestion?
 
                 for call in toolCalls {
-                    if call.name == .suggestPurchases {
-                        let (resultContent, suggestions) = await host.executeSuggestPurchases(
-                            SuggestPurchasesInput(from: call.inputJSON)
-                        )
-                        toolResultBlocks.append([
-                            "type": "tool_result",
-                            "tool_use_id": call.toolUseID,
-                            "content": resultContent
-                        ])
-                        purchaseSuggestions.append(contentsOf: suggestions)
-                    } else if call.name == .askUserQuestion {
-                        let input = AskUserQuestionInput(from: call.inputJSON)
-                        pendingQuestion = AgentQuestion(
-                            id: streamingID,
-                            toolUseID: call.toolUseID,
-                            question: input.question,
-                            options: input.options,
-                            allowsOther: input.allowsOther,
-                            multiSelect: input.multiSelect
-                        )
-                        toolResultBlocks.append([
-                            "type": "tool_result",
-                            "tool_use_id": call.toolUseID,
-                            "content": "Question posted to the user. Wait for their reply as a new user message — do not respond further this turn."
-                        ])
-                    } else {
-                        let (resultContent, toolOutfits, toolItems, toolInsight) = await host.executeTool(call)
-                        toolResultBlocks.append([
-                            "type": "tool_result",
-                            "tool_use_id": call.toolUseID,
-                            "content": resultContent
-                        ])
-                        outfits.append(contentsOf: toolOutfits)
-                        foundItems.append(contentsOf: toolItems)
-                        if let note = toolInsight { insightNote = note }
-                    }
+                    guard let outcome = outcomes[call.toolUseID] else { continue }
+                    toolResultBlocks.append(outcome.resultBlock)
+                    outfits.append(contentsOf: outcome.outfits)
+                    foundItems.append(contentsOf: outcome.items)
+                    if let note = outcome.insightNote { insightNote = note }
+                    purchaseSuggestions.append(contentsOf: outcome.purchaseSuggestions)
+                    if let q = outcome.question { pendingQuestion = q }
                 }
 
                 history.append(["role": "user", "content": toolResultBlocks])
+                compactHistoryIfNeeded()
 
                 host.markPendingSeparator(streamingID: streamingID)
 
@@ -315,6 +337,108 @@ final class AgentConversationLoop {
             return code == 429 || (500..<600).contains(code)
         default:
             return false
+        }
+    }
+
+    private func runOneToolCall(
+        _ call: ToolUseBlock,
+        host: AgentLoopHost,
+        streamingID: UUID
+    ) async -> ToolOutcome {
+        if call.name == .suggestPurchases {
+            let (resultContent, suggestions) = await host.executeSuggestPurchases(
+                SuggestPurchasesInput(from: call.inputJSON)
+            )
+            return ToolOutcome(
+                toolUseID: call.toolUseID,
+                resultBlock: [
+                    "type": "tool_result",
+                    "tool_use_id": call.toolUseID,
+                    "content": resultContent
+                ],
+                outfits: [],
+                items: [],
+                insightNote: nil,
+                purchaseSuggestions: suggestions,
+                question: nil
+            )
+        }
+        if call.name == .askUserQuestion {
+            let input = AskUserQuestionInput(from: call.inputJSON)
+            let question = AgentQuestion(
+                id: streamingID,
+                toolUseID: call.toolUseID,
+                question: input.question,
+                options: input.options,
+                allowsOther: input.allowsOther,
+                multiSelect: input.multiSelect
+            )
+            return ToolOutcome(
+                toolUseID: call.toolUseID,
+                resultBlock: [
+                    "type": "tool_result",
+                    "tool_use_id": call.toolUseID,
+                    "content": "Question posted to the user. Wait for their reply as a new user message — do not respond further this turn."
+                ],
+                outfits: [],
+                items: [],
+                insightNote: nil,
+                purchaseSuggestions: [],
+                question: question
+            )
+        }
+        let (resultContent, toolOutfits, toolItems, toolInsight) = await host.executeTool(call)
+        return ToolOutcome(
+            toolUseID: call.toolUseID,
+            resultBlock: [
+                "type": "tool_result",
+                "tool_use_id": call.toolUseID,
+                "content": resultContent
+            ],
+            outfits: toolOutfits,
+            items: toolItems,
+            insightNote: toolInsight,
+            purchaseSuggestions: [],
+            question: nil
+        )
+    }
+
+    // Rolling-window compaction. Walk history, find user-text messages (they delimit
+    // conversational turns), and for any tool_result blocks older than the last N turns,
+    // replace their `content` with a short placeholder. tool_use_id stays intact so the
+    // structural pairing the Anthropic API requires is preserved.
+    private func compactHistoryIfNeeded() {
+        var userTextIndices: [Int] = []
+        for (i, entry) in history.enumerated() {
+            guard let role = entry["role"] as? String, role == "user" else { continue }
+            if entry["content"] is String {
+                userTextIndices.append(i)
+            }
+        }
+        guard userTextIndices.count > Self.recentToolResultTurnsKept else { return }
+
+        let cutoffUserIdx = userTextIndices.count - Self.recentToolResultTurnsKept
+        let cutoff = userTextIndices[cutoffUserIdx]
+
+        var elidedCount = 0
+        for i in 0..<cutoff {
+            guard let role = history[i]["role"] as? String, role == "user",
+                  var blocks = history[i]["content"] as? [[String: Any]] else { continue }
+            var mutated = false
+            for j in 0..<blocks.count {
+                guard blocks[j]["type"] as? String == "tool_result" else { continue }
+                if (blocks[j]["content"] as? String) == Self.elidedToolResultPlaceholder { continue }
+                blocks[j]["content"] = Self.elidedToolResultPlaceholder
+                mutated = true
+                elidedCount += 1
+            }
+            if mutated {
+                history[i]["content"] = blocks
+            }
+        }
+
+        if elidedCount > 0 {
+            print("[AgentCompaction] Elided \(elidedCount) tool_result content block(s) (keeping last \(Self.recentToolResultTurnsKept) turns verbatim)")
         }
     }
 
