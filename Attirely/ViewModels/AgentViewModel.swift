@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-// Observable facade for the style agent. Owns UI-bound state and pending outfit data,
+// Observable facade for Athena, the style agent. Owns UI-bound state and pending outfit data,
 // and delegates the three heavy responsibilities to purpose-built collaborators:
 // - AgentToolExecutor: tool routing + execution
 // - AgentConversationLoop: SSE streaming + tool-use loop + history
@@ -205,6 +205,23 @@ class AgentViewModel {
     // Exposed for executor/loop via the host protocols.
     func saveIfPossible() {
         try? modelContext?.save()
+    }
+
+    // Drops pending entries whose outfit is no longer referenced by any chat message.
+    // Called at the end of each turn so abandoned outfits (e.g. ones replaced via
+    // updateOriginalFromCopy or edits that never landed in messages) don't accumulate.
+    func pruneOrphanedPendingOutfits() {
+        let liveIDs: Set<UUID> = Set(messages.flatMap { $0.outfits.map(\.id) })
+
+        let beforeItems = pendingOutfitItems.count
+        pendingOutfitItems = pendingOutfitItems.filter { liveIDs.contains($0.key) }
+        pendingOutfitTags = pendingOutfitTags.filter { liveIDs.contains($0.key) }
+        sourceOutfitIDForCopy = sourceOutfitIDForCopy.filter { liveIDs.contains($0.key) }
+
+        let dropped = beforeItems - pendingOutfitItems.count
+        if dropped > 0 {
+            AgentTelemetry.recordPrunedPendingOutfits(dropped)
+        }
     }
 
     func updateOriginalFromCopy(_ copy: Outfit) {

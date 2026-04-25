@@ -1,120 +1,214 @@
-# Agent Improvement Plan
+# Agent Improvement Plan — Pantheon Integration
 
-Scope: the Attirely style agent — chat loop, tool calls, streaming, and learning system.
-Files touched: [AgentViewModel.swift](Attirely/ViewModels/AgentViewModel.swift), [AgentService.swift](Attirely/Services/AgentService.swift), [AgentMessageBubble.swift](Attirely/Views/AgentMessageBubble.swift), [AgentView.swift](Attirely/Views/AgentView.swift), [SSETypes.swift](Attirely/Models/SSETypes.swift), [AgentToolDTO.swift](Attirely/Models/AgentToolDTO.swift).
+Scope: refactor the Attirely style agent so it can run behind The Pantheon's `InferenceProvider` abstraction. The agent should work identically whether backed by the Claude API (current) or by a local model via Olympus/Athena routing.
 
----
-
-## What's working well
-
-- Tool surface is focused: 7 well-scoped tools with clear intent-detection rules.
-- SSE streaming with cooperative `Task` cancellation via `currentTask`.
-- Pending-state pattern (`pendingOutfitItems`, `pendingOutfitTags`) cleanly defers SwiftData inserts until "Save".
-- Edit-as-proposal flow preserves saved outfits — good UX.
-- Conversation dedup (`conversationGeneratedItemSets`) prevents repeat suggestions in one chat.
-- Learning loop via `ObservationManager` with Jaccard fuzzy matching and threshold-based confidence.
+**Goal:** when The Pantheon's Athena agent receives a style request, it delegates to the same tool-execution and prompt-building logic that Attirely uses today — but the inference call goes through the Pantheon's provider, not directly to Anthropic.
 
 ---
 
-## Priority 1 — ship first (highest ROI) (COMPLETED)
+## Current Anthropic coupling points
 
-### 1.1 Add prompt caching
-- **Problem**: the full system prompt (guidelines + intent detection + mode block + weather + style summary + observations + wardrobe counts) is re-tokenized every turn. Tool definitions are ~3 KB of stable text re-sent on every call.
-- **Change**: in [AgentService.swift:54-70](Attirely/Services/AgentService.swift#L54-L70), switch `system` from a string to a structured block and add `cache_control: {"type": "ephemeral"}` on the static portion (guidelines, intent detection, tool definitions). Keep dynamic fragments (weather, wardrobe counts) outside the cache.
-- **Impact**: 50–80% latency drop on follow-up turns; proportional cost drop.
-
-### 1.2 raise token budget
-- **Problem**: [AgentService.swift:5](Attirely/Services/AgentService.swift#L5) pins `claude-sonnet-4-20250514`; `maxTokens = 2048` is tight for chained tool turns.
-- **Change**: Bump `maxTokens` to 4096.
-- **Impact**: better tool-use reliability, fewer truncated responses.
-
-### 1.3 Handle `stop_reason` properly
-- **Problem**: [AgentViewModel.swift:193](Attirely/ViewModels/AgentViewModel.swift#L193) only distinguishes `end_turn` from "has tool calls". `max_tokens`, `refusal`, `pause_turn` all fall through silently — truncated responses look like completed ones.
-- **Change**: switch on all `stop_reason` values. On `max_tokens`, either continue with a follow-up turn or show a warning.
-
----
-
-## Priority 2 — UX polish (COMPLETED)
-
-### 2.1 Stream tool-use status to the UI
-- **Problem**: `isStreaming` flips false on first text delta ([AgentMessageBubble.swift:57](Attirely/Views/AgentMessageBubble.swift#L57)). When the model goes straight to a tool without preamble, users stare at thinking dots.
-- **Change**: in `ContentBlockAccumulator.apply` for `.toolUseStart`, emit a status update ("Searching your wardrobe…", "Building an outfit…") based on tool name. Surface it on `ChatMessage`.
-
-### 2.2 Retry transient errors with backoff
-- **Problem**: [AgentViewModel.swift:268](Attirely/ViewModels/AgentViewModel.swift#L268) shows "Claude overloaded" as a dead-end.
-- **Change**: exponential backoff (1s, 3s, 7s) with a visible "retrying…" state in the bubble. Max 3 attempts.
-
-### 2.3 Replace `maxLoops = 5` with a runaway guard + wrap-up turn
-- **Problem**: [AgentViewModel.swift:154](Attirely/ViewModels/AgentViewModel.swift#L154) silently stops at 5 iterations. A flat iteration cap conflates two different failures: a legitimate long tool chain (e.g. `suggestPurchases` → `searchWardrobe` → `generateOutfit` → respond) and a true runaway (model calling the same tool with the same input over and over). Punishing the former to catch the latter is the wrong shape.
-- **Change**:
-  1. Raise the hard cap from 5 → 10 as a last-resort safety net (never expected to hit).
-  2. Add the real runaway guard: track `(toolName, normalized(inputJSON))` tuples within a single conversation loop. If the same call repeats, break immediately.
-  3. On either trigger, make **one final API call with `tools: []`** so the model produces a clean text wrap-up. No fake tool_result, no history pollution — an empty tools list is a legitimate API shape.
-  4. Log every trigger with tool name + normalized input so repeat bugs are debuggable.
-- **Why not the synthetic tool_result approach**: it lies to the model, pollutes history (hurting prompt-cache hit rate on subsequent turns), and still doesn't distinguish "legit long chain" from "buggy infinite loop".
+| Layer | File(s) | What's coupled | Severity |
+|-------|---------|---------------|----------|
+| Transport | `AnthropicService.swift` | Hard-coded URL, headers, model ID, Anthropic JSON body shape | High |
+| Request builder | `AgentService.swift` | `cache_control: ephemeral`, Anthropic system block format, tool schema shape | High |
+| SSE parsing | `SSEStreamParser.swift`, `SSETypes.swift` | Anthropic-specific event types (`content_block_start`, `content_block_delta`, `input_json_delta`) | High |
+| Conversation history | `AgentConversationLoop.swift` | History stored as literal Anthropic `messages` payload (`[[String: Any]]`), `tool_result` with `tool_use_id` pairing | High |
+| Tool block parsing | `AgentToolDTO.swift` | `ToolUseBlock` expects Anthropic's `id`/`name`/`input` shape | Medium |
+| Stop reasons | `AgentConversationLoop.swift` | Switches on `end_turn`, `tool_use`, `max_tokens` — Anthropic-specific strings | Medium |
+| Error handling | `AgentConversationLoop.swift`, `AgentToolExecutor.swift` | Catches `AnthropicError` for retry logic and nested generation | Medium |
+| Prompt builder | `AgentPromptBuilder.swift` | Content is generic, but assumes two-block split for Anthropic cache | Low |
+| Tool executor | `AgentToolExecutor.swift` | Domain tools are generic; nested calls to `AnthropicService.generateOutfits`/`suggestPurchases` are coupled | Medium |
+| View model | `AgentViewModel.swift` | Provider-agnostic — talks only to protocols | None |
 
 ---
 
-## Priority 3 — structural debt
+## Priority 1 — Inference abstraction layer
 
-### 3.1 Split `AgentViewModel` (1119 lines)
-CLAUDE.md rules out view models beyond ~200 lines. Extract:
-- `AgentConversationLoop` — SSE loop + history management (lines 140–278)
-- `AgentToolExecutor` — the six `executeX` functions (lines 282–734)
-- `AgentPromptBuilder` — `buildSystemPrompt`, `modeBehaviorBlock`, `ambiguousIntentRule` (lines 963–1117)
-- `OutfitMatcher` — `matchItem`, `normalizeMatchWords`, `normalizeToken` (lines 808–853)
+### 1.1 Define `InferenceProvider` protocol
 
-The view model should only own observable state and delegate.
+Create a provider-agnostic interface that both the Anthropic API and future Pantheon/Ollama backends can conform to.
 
-### 3.2 Address item-matching correctness risk (ID-addressed agent tools)
-- **Problem**: [matchItem](Attirely/ViewModels/AgentViewModel.swift#L955-L980) uses fuzzy word overlap. UUIDs exist on `ClothingItem` and already flow through `generateOutfits`/`generateAnchoredOutfits`, but the agent-tool surface (`must_include_items`, `editOutfit.remove_items`/`add_items`/`outfit_name`) still accepts free-form descriptions. Two navy blazers → `max(by: score)` at [AgentViewModel.swift:979](Attirely/ViewModels/AgentViewModel.swift#L979) picks arbitrarily.
-- **Scope discipline — this is a boundary change, not a major refactor.** UUIDs are already in the model. Infrastructure (UUID fast-path in `matchItem` at [line 956-964](Attirely/ViewModels/AgentViewModel.swift#L956-L964), ID-based generation, `mustIncludeItemIDs` plumbing) already exists. The real work is ~3 files: tool schemas, tool-result formatters, input DTOs.
-- **Change**:
-  1. **Short aliases, not full UUIDs.** A 36-char UUID × ~35 candidates is ~350 wasted prompt tokens per turn. Use a per-conversation alias (`I1`, `I2`… or 6-hex prefix). Keep full UUIDs internal; resolve aliases at the agent-tool boundary. ([matchItem:956-964](Attirely/ViewModels/AgentViewModel.swift#L956-L964) already has scaffolding for UUID-token parsing — extend for aliases.)
-  2. **Expose IDs in tool results.** Update `executeSearchWardrobe` ([line 674](Attirely/ViewModels/AgentViewModel.swift#L674)) and `executeSearchOutfits` ([line 624](Attirely/ViewModels/AgentViewModel.swift#L624)) to prefix each row with its alias so subsequent turns can cite it. Consider returning structured JSON in `tool_result.content` instead of prose so the model reasons over typed data.
-  3. **Accept IDs in tool inputs.** Add parallel `*_ids` fields to `GenerateOutfitInput.mustIncludeItems` and `EditOutfitInput.remove_items`/`add_items`/`outfit_name` ([AgentToolDTO.swift:40,82-95](Attirely/Models/AgentToolDTO.swift#L40)); update the tool JSON schemas in [AgentService.swift:116-124,220-246](Attirely/Services/AgentService.swift#L116-L124).
-  4. **Keep word-matching as fallback, not preferred path.** `applyItemEdits` ([line 911](Attirely/ViewModels/AgentViewModel.swift#L911)) and `resolveOutfit` ([line 883](Attirely/ViewModels/AgentViewModel.swift#L883)) should try ID first, fall back to fuzzy when no alias parses. Removing the fallback entirely will regress any case where the model references an item it never searched.
-  5. **Drill the UX distinction in the prompt.** IDs are for tool-call plumbing only — never user-facing. The existing "reference items by type and color" rule at [AgentViewModel.swift:1168](Attirely/ViewModels/AgentViewModel.swift#L1168) must be strengthened or the agent will leak `I3` into prose.
-  6. **Round-trip requirement.** Claude can only cite an ID it has seen. System prompt currently lists wardrobe counts only ([line 1230](Attirely/ViewModels/AgentViewModel.swift#L1230)). Either (a) enforce search-first via tool-result structure, or (b) inline a compact `alias|type|color` index in the fresh system prompt. Choose based on wardrobe size — inlining is fine up to ~40 items, search-first scales better.
-- **Files**: [AgentToolDTO.swift](Attirely/Models/AgentToolDTO.swift), [AgentService.swift](Attirely/Services/AgentService.swift) (tool schemas), [AgentViewModel.swift](Attirely/ViewModels/AgentViewModel.swift) (result formatters, `applyItemEdits`, `resolveOutfit`, `matchItem`, system-prompt rules). Also stale doc claims in [CLAUDE.md](CLAUDE.md), [.claude/rules/api-integration.md](.claude/rules/api-integration.md), [AGENTS.md](AGENTS.md) — "fuzzy item matching via word overlap scoring" becomes the fallback, not the primary path.
-- **Not a blocker for Priority 1.** Sequence after caching + token bump + `stop_reason` handling — those have bigger latency/cost impact. This is a correctness win with a narrower blast radius.
+```swift
+protocol InferenceProvider {
+    var modelId: String { get }
 
-### 3.3 History compaction
-- **Problem**: `history` in [AgentViewModel.swift:20](Attirely/ViewModels/AgentViewModel.swift#L20) grows unbounded. 15 turns with tool calls = 40+ blocks.
-- **Change**: rolling window — keep last N turns verbatim, summarize older turns into a single "Earlier in this conversation: …" message. Or drop stale tool_result *content* (keep IDs for structural validity).
+    func complete(
+        system: [SystemBlock],
+        messages: [ConversationMessage],
+        tools: [ToolDefinition]?,
+        maxTokens: Int
+    ) async throws -> InferenceResult
 
-### 3.4 Parallelize independent tool calls
-- **Problem**: [AgentViewModel.swift:206](Attirely/ViewModels/AgentViewModel.swift#L206) executes tools sequentially even when they're independent.
-- **Change**: `withTaskGroup` for non-mutating tools (`searchWardrobe`, `searchOutfits`, `suggestPurchases`). Keep `editOutfit` and `updateStyleInsight` sequential.
+    func stream(
+        system: [SystemBlock],
+        messages: [ConversationMessage],
+        tools: [ToolDefinition]?,
+        maxTokens: Int
+    ) -> AsyncThrowingStream<StreamChunk, Error>
+}
+```
+
+**Files:** new `Services/InferenceProvider.swift`
+
+### 1.2 Define normalized domain types
+
+Replace raw `[String: Any]` dictionaries with typed models that are provider-agnostic:
+
+- `ConversationMessage` — role + content blocks (text, tool_use, tool_result, image)
+- `ToolUseCall` — id, name, input (replaces `ToolUseBlock`'s Anthropic-specific init)
+- `ToolResultBlock` — tool_use_id, content string
+- `InferenceResult` — text, tool calls, stop reason enum
+- `StreamChunk` — normalized streaming event (text delta, tool call start, tool input delta, done)
+- `StopReason` — `.endTurn`, `.toolUse`, `.maxTokens` (provider maps its native strings to this)
+- `SystemBlock` — text + optional cache hint (providers that don't support caching ignore it)
+- `InferenceError` — `.rateLimited`, `.overloaded`, `.invalidRequest`, `.networkError` (with `isRetryable`)
+
+**Files:** new `Models/InferenceTypes.swift`
+
+### 1.3 Create `AnthropicInferenceAdapter`
+
+Wrap the current `AnthropicService` agent methods + `SSEStreamParser` behind `InferenceProvider`:
+
+- Maps `ConversationMessage` → Anthropic JSON body
+- Maps `SystemBlock` → Anthropic system array with `cache_control`
+- Maps `ToolDefinition` → Anthropic tool schema JSON
+- Parses Anthropic SSE events → `StreamChunk`
+- Maps Anthropic stop reasons → `StopReason` enum
+- Maps `AnthropicError` → `InferenceError`
+
+This is a **wrap, not rewrite**. The existing `AnthropicService` streaming and parsing code moves inside the adapter largely unchanged.
+
+**Files:** new `Services/AnthropicInferenceAdapter.swift`, modified `AgentService.swift`
+
+### 1.4 Create `PantheonInferenceAdapter` (stub)
+
+A stub adapter that will eventually call The Pantheon's local endpoint instead of the Anthropic API. For now it conforms to `InferenceProvider` and throws "not configured." This validates the abstraction compiles and the protocol is complete.
+
+When The Pantheon is ready, this adapter will:
+- POST to the Mac's local Ollama/inference endpoint
+- Parse Ollama-format streaming responses → `StreamChunk`
+- Map Ollama tool call format → `ToolUseCall`
+- Handle the simpler system prompt format (single string, no cache blocks)
+
+**Files:** new `Services/PantheonInferenceAdapter.swift`
 
 ---
 
-## Priority 4 — polish
+## Priority 2 — Decouple the conversation loop
 
-- `AgentQuestion` is single-shot per message ([line 900](Attirely/ViewModels/AgentViewModel.swift#L900)) — a second `askUserQuestion` silently overwrites the first. Reject the second or model as `[AgentQuestion]`.
-- Tool-result strings contain rendering instructions ("Display these…", "Do not say the edit failed…", [line 665](Attirely/ViewModels/AgentViewModel.swift#L665)). Move to system prompt; keep tool results factual.
-- `pendingOutfitItems` never purges for abandoned (never-saved) outfits still held by `messages` — slow memory growth in long chats.
-- No telemetry: can't measure tool-call distribution, hallucinated-ID rate, avg round-trip. Add a lightweight counter in `AgentToolExecutor`.
-- Tool-use JSON parse failure at [SSETypes.swift:68](Attirely/Models/SSETypes.swift#L68) silently becomes `{}` — at minimum, log the malformed JSON.
-- Intent-detection rules are duplicated across system prompt *and* tool descriptions. Consolidate.
+### 2.1 Replace `[[String: Any]]` history with typed `[ConversationMessage]`
+
+`AgentConversationLoop.history` currently stores raw Anthropic JSON. Replace with `[ConversationMessage]` from Priority 1.2. Each adapter serializes the typed history into its provider's wire format when building the request.
+
+**Impact:** history compaction, tool-result elision, and message appending all operate on typed data instead of dictionary surgery.
+
+**Files:** `AgentConversationLoop.swift`
+
+### 2.2 Replace `ContentBlockAccumulator` with provider-agnostic stream assembly
+
+`ContentBlockAccumulator` and `SSETypes` are tightly coupled to Anthropic's streaming protocol. Replace with a `StreamAssembler` that consumes `StreamChunk` (from the provider) and produces a `ConversationMessage` (assistant turn with text + tool calls).
+
+Each provider's adapter handles its own raw stream parsing. The loop only sees normalized chunks.
+
+**Files:** `AgentConversationLoop.swift`, `SSETypes.swift` (possibly retired or reduced)
+
+### 2.3 Generalize stop-reason handling
+
+Replace string comparisons (`"end_turn"`, `"tool_use"`) with switches on the `StopReason` enum from 1.2.
+
+**Files:** `AgentConversationLoop.swift`
+
+### 2.4 Generalize retry logic
+
+Replace `AnthropicError` catches with `InferenceError` from 1.2. The `isRetryable` property moves to the error enum.
+
+**Files:** `AgentConversationLoop.swift`
+
+---
+
+## Priority 3 — Decouple nested generation calls
+
+### 3.1 Define `GenerationService` protocol
+
+`AgentToolExecutor` currently calls `AnthropicService.generateOutfits()` and `AnthropicService.suggestPurchases()` directly — these are full second API round-trips baked into tool execution. Extract a protocol:
+
+```swift
+protocol GenerationService {
+    func generateOutfits(items: [ClothingItem], ...) async throws -> [OutfitDTO]
+    func suggestPurchases(items: [ClothingItem], ...) async throws -> [PurchaseSuggestionDTO]
+}
+```
+
+The current `AnthropicService` static methods back this initially. When running through The Pantheon, Athena could handle generation directly (eliminating the nested call) or route to the same local model with a different prompt.
+
+**Files:** new `Services/GenerationService.swift`, modified `AgentToolExecutor.swift`
+
+### 3.2 Inject provider into `AgentToolExecutor`
+
+The executor currently has no provider dependency — it calls `AnthropicService` statics. Inject the `GenerationService` at init so the provider is swappable.
+
+**Files:** `AgentToolExecutor.swift`, `AgentViewModel.swift` (passes dependency at init)
+
+---
+
+## Priority 4 — Pantheon communication endpoint
+
+### 4.1 Expose agent capabilities as a local API
+
+When The Pantheon's Athena routes a request to Attirely, the app needs to receive it. Add a lightweight local HTTP endpoint (or use Bonjour + MultipeerConnectivity) that:
+
+- Accepts incoming style/wardrobe requests from The Pantheon
+- Routes them through the same `AgentConversationLoop` + `AgentToolExecutor` pipeline
+- Returns results back to The Pantheon
+- Only responds to the developer's account (checked via device ID or local-only binding)
+
+This is the bridge described in The Pantheon's SPEC.md under "Relationship to Attirely."
+
+**Files:** new `Services/PantheonBridge.swift` (or similar)
+
+### 4.2 Share style profile with The Pantheon
+
+The Pantheon's Athena needs access to the user's `StyleSummary`, behavioral observations, and wardrobe data. Define a data export format that The Pantheon can ingest:
+
+- Wardrobe items (attributes, tags, images)
+- Style profile (StyleSummary, observations)
+- Outfit history (saved, dismissed)
+- Occasion preferences
+
+This could be a simple JSON export endpoint on the local API from 4.1, or a shared data store if both systems run on the same Mac.
+
+**Files:** TBD based on Pantheon architecture decisions
+
+---
+
+## What stays unchanged
+
+- **`AgentViewModel.swift`** — already provider-agnostic. No changes needed.
+- **`AgentPromptBuilder.swift`** — content is generic. Providers decide how to use the cached/fresh split.
+- **Tool execution logic** — `searchWardrobe`, `editOutfit`, `searchOutfits`, etc. are pure domain logic operating on SwiftData. Provider-independent.
+- **`OutfitMatcher.swift`** — alias resolution, fuzzy matching. Provider-independent.
+- **UI layer** — `AgentView`, `AgentMessageBubble`, etc. See state from the view model only.
 
 ---
 
 ## Suggested sequencing
 
-| Week | Items | Goal |
-|------|-------|------|
-| 1 | 1.1, 1.2, 1.3 | Immediate latency / cost / quality wins |
-| 2 | 2.1, 2.2, 2.3 | User-facing polish |
-| 3–4 | 3.1, 3.2, 3.3, 3.4 | Structural debt + correctness |
-| 5+ | Priority 4 | Quality-of-life cleanup |
+| Phase | Items | Goal |
+|-------|-------|------|
+| 1 | 1.1, 1.2, 1.3, 1.4 | InferenceProvider protocol + Anthropic adapter + Pantheon stub. Agent works identically but through the abstraction. |
+| 2 | 2.1, 2.2, 2.3, 2.4 | Conversation loop decoupled from Anthropic wire format. History is typed. |
+| 3 | 3.1, 3.2 | Nested generation calls decoupled. Tool executor is fully provider-agnostic. |
+| 4 | 4.1, 4.2 | Local API endpoint for Pantheon communication. Style data sharing. |
+
+Phases 1-3 can proceed independently of The Pantheon's development. Phase 4 depends on Pantheon architecture decisions (open questions in SPEC.md).
 
 ---
 
-## Success metrics
+## Success criteria
 
-- **Latency**: p50 time-to-first-token on follow-up turns (target: −50% after 1.1).
-- **Cost**: tokens per conversation (target: −40% after 1.1).
-- **Correctness**: % of `must_include_items` that resolve to the intended item (target: >95% after 3.2).
-- **Reliability**: % of turns hitting `max_tokens` or `maxLoops` (target: <1%).
-- **Engagement**: % of generated outfits saved (baseline before changes, re-measure after).
+- **Zero behavior change** after phases 1-3: the agent works exactly as before through the Anthropic adapter.
+- **Compilation test:** `PantheonInferenceAdapter` stub compiles and conforms to `InferenceProvider` — validates the abstraction is complete.
+- **No `AnthropicService` imports** outside of `AnthropicInferenceAdapter` and the non-agent vision/scan methods (those stay Anthropic-specific until The Pantheon handles vision).
+- **No `[String: Any]`** in `AgentConversationLoop` — all history is typed.
+- **Swappable at init:** changing one config flag routes all agent inference through a different provider.

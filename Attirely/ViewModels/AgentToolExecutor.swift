@@ -40,6 +40,7 @@ final class AgentToolExecutor {
     // MARK: - Router
 
     func execute(_ call: ToolUseBlock) async -> (String, [Outfit], [ClothingItem], String?) {
+        AgentTelemetry.recordToolCall(call.name.rawValue)
         switch call.name {
         case .generateOutfit:
             return await executeGenerateOutfit(GenerateOutfitInput(from: call.inputJSON))
@@ -74,7 +75,8 @@ final class AgentToolExecutor {
             // the agent cited without an alias. Union the two so callers can mix both.
             let (idMatched, unknownAliases) = resolveItemIDs(input.mustIncludeItemIDs, in: wardrobe)
             let descMatched = input.mustIncludeItems.compactMap { desc -> ClothingItem? in
-                OutfitMatcher.matchItem(description: desc, in: wardrobe)
+                AgentTelemetry.recordFuzzyFallback(AgentToolName.generateOutfit.rawValue)
+                return OutfitMatcher.matchItem(description: desc, in: wardrobe)
             }
             let mustIncludeResolved = unique(idMatched + descMatched)
 
@@ -359,6 +361,10 @@ final class AgentToolExecutor {
             if let match = OutfitMatcher.resolveAlias(id, in: host.allOutfits) {
                 return match
             }
+            AgentTelemetry.recordUnknownAlias(id, tool: AgentToolName.editOutfit.rawValue)
+        }
+        if let name = input.outfitName, !name.isEmpty {
+            AgentTelemetry.recordFuzzyFallback(AgentToolName.editOutfit.rawValue)
         }
         return OutfitMatcher.resolveOutfit(
             named: input.outfitName ?? "",
@@ -458,7 +464,6 @@ final class AgentToolExecutor {
         if !edits.unmatchedAdd.isEmpty { summary += " Could not find in wardrobe: \(edits.unmatchedAdd.joined(separator: ", "))." }
         summary += " Proposed items (\(edits.items.count)): \(itemList)."
         if !warnings.isEmpty { summary += " Warnings: \(warnings.joined(separator: "; "))." }
-        summary += " The user will choose whether to update the original or save as a new outfit via buttons under the card — simply introduce the variant. Do not say the edit failed, was not applied, or that a copy was made."
 
         return (summary, [copy], [], nil)
     }
@@ -490,6 +495,7 @@ final class AgentToolExecutor {
     // MARK: - suggestPurchases
 
     func executeSuggestPurchases(_ input: SuggestPurchasesInput) async -> (String, [PurchaseSuggestionDTO]) {
+        AgentTelemetry.recordToolCall(AgentToolName.suggestPurchases.rawValue)
         guard let host else { return ("Internal error: host released.", []) }
         guard !host.wardrobeItems.isEmpty else {
             return ("The user's wardrobe is empty. Ask them to add some items first before suggesting purchases.", [])
@@ -512,7 +518,6 @@ final class AgentToolExecutor {
             for (i, s) in suggestions.enumerated() {
                 resultText += "\(i + 1). \(s.description) (\(s.category)) — pairs with \(s.wardrobeCompatibilityCount) items\n"
             }
-            resultText += "Display these suggestions to the user as structured cards."
 
             return (resultText, suggestions)
         } catch {
@@ -556,11 +561,13 @@ final class AgentToolExecutor {
                 recordNegativeSignal(for: match, occasionContext: occasionContext)
             } else {
                 unmatchedRemove.append(alias)
+                AgentTelemetry.recordUnknownAlias(alias, tool: AgentToolName.editOutfit.rawValue)
             }
         }
 
         // Phase 2: description-addressed removals (fallback)
         for desc in removeDescs {
+            AgentTelemetry.recordFuzzyFallback(AgentToolName.editOutfit.rawValue)
             if let match = OutfitMatcher.matchItem(description: desc, in: items) {
                 items.removeAll { $0.id == match.id }
                 removed.append("\(match.type) (\(match.primaryColor))")
@@ -580,11 +587,13 @@ final class AgentToolExecutor {
                 available.removeAll { $0.id == match.id }
             } else {
                 unmatchedAdd.append(alias)
+                AgentTelemetry.recordUnknownAlias(alias, tool: AgentToolName.editOutfit.rawValue)
             }
         }
 
         // Phase 4: description-addressed additions
         for desc in addDescs {
+            AgentTelemetry.recordFuzzyFallback(AgentToolName.editOutfit.rawValue)
             if let match = OutfitMatcher.matchItem(description: desc, in: available) {
                 items.append(match)
                 added.append("\(match.type) (\(match.primaryColor))")
@@ -630,6 +639,7 @@ final class AgentToolExecutor {
                 matched.append(item)
             } else {
                 unknown.append(alias)
+                AgentTelemetry.recordUnknownAlias(alias, tool: AgentToolName.generateOutfit.rawValue)
             }
         }
         return (matched, unknown)

@@ -268,11 +268,11 @@ struct ProfileView: View {
 
             // Agent Mode
             VStack(alignment: .leading, spacing: 6) {
-                Text("Style Agent")
+                Text("Athena")
                     .font(.caption)
                     .foregroundStyle(Theme.secondaryText)
 
-                Picker("Agent Mode", selection: Binding(
+                Picker("Athena Mode", selection: Binding(
                     get: { profile.agentMode },
                     set: { viewModel.updateAgentMode($0, profile: profile) }
                 )) {

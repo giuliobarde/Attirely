@@ -96,11 +96,10 @@ struct AgentService {
             "name": "generateOutfit",
             "description": """
                 Generate a complete outfit from the user's wardrobe based on current weather \
-                and preferences. Call this when the user asks for outfit suggestions, asks what \
-                to wear, or requests an outfit for a specific occasion. When the user wants an \
-                outfit built around specific items, prefer must_include_item_ids (6-char aliases \
-                from searchWardrobe results or the wardrobe index) over must_include_items. \
-                Returns a styled outfit with reasoning.
+                and preferences. When the user wants an outfit built around specific items, \
+                prefer must_include_item_ids (6-char aliases from searchWardrobe results or the \
+                wardrobe index) over must_include_items. Returns a styled outfit with reasoning. \
+                See system prompt INTENT DETECTION for when to call this vs. searchOutfits.
                 """,
             "input_schema": [
                 "type": "object",
@@ -140,10 +139,8 @@ struct AgentService {
         [
             "name": "searchOutfits",
             "description": """
-                Search the user's saved outfits by name, occasion, or tags. Use this when the \
-                user asks for a familiar outfit, a go-to look, something they've worn before, or \
-                references existing outfits (e.g. 'my usual work outfit', 'what do I normally \
-                wear to the gym', 'find me a formal outfit'). Can filter by tags.
+                Search the user's saved outfits by name, occasion, or tags. Returns up to 5 \
+                matches, favorites first. See system prompt INTENT DETECTION for routing rules.
                 """,
             "input_schema": [
                 "type": "object",
@@ -165,8 +162,8 @@ struct AgentService {
             "name": "searchWardrobe",
             "description": """
                 Search the user's wardrobe for specific items matching a description or criteria. \
-                Use this when the user asks about specific pieces they own, wants to know what \
-                colors or types they have, or asks questions like 'do I have any blazers?'
+                Returns matches with their 6-char aliases. See system prompt INTENT DETECTION for \
+                routing rules.
                 """,
             "input_schema": [
                 "type": "object",
@@ -182,12 +179,10 @@ struct AgentService {
         [
             "name": "updateStyleInsight",
             "description": """
-                Record a style observation about the user. Use this when: \
-                (1) The user EXPLICITLY states a preference or dislike (high confidence), \
-                (2) The user's outfit edit reveals a behavioral pattern — e.g. they keep removing \
-                sneakers from business outfits (medium confidence), \
-                (3) You notice a recurring pattern across the conversation (low confidence). \
-                Both positive preferences and negative aversions should be recorded.
+                Record a style observation about the user (positive preference or negative \
+                aversion). Confidence reflects how explicitly it was communicated: \
+                'high' = explicit statement, 'medium' = behavioral pattern, 'low' = inferred. \
+                See system prompt for when to call this.
                 """,
             "input_schema": [
                 "type": "object",
@@ -218,15 +213,11 @@ struct AgentService {
         [
             "name": "editOutfit",
             "description": """
-                Edit an outfit — either from this conversation or a saved outfit from the user's \
-                wardrobe. Use this when the user asks to swap, replace, add, or remove items, \
-                rename it, or change its occasion. For saved outfits, your edit is shown as a \
-                proposed variant; the user picks whether to update the original or save it as a \
-                new outfit via buttons under the card. Just perform the edit — never describe it \
-                as a failure, as 'not applied', or as a manual copy. Prefer outfit_id / \
-                remove_item_ids / add_item_ids (6-char aliases from search results); fall back to \
-                outfit_name / remove_items / add_items only when you haven't seen the aliases. \
-                Use the most recently shown outfit if the user doesn't specify.
+                Edit an outfit — either from this conversation or a saved outfit. Prefer outfit_id \
+                / remove_item_ids / add_item_ids (6-char aliases from search results); fall back \
+                to outfit_name / remove_items / add_items only when you haven't seen the aliases. \
+                Use the most recently shown outfit if the user doesn't specify. See system prompt \
+                INTENT DETECTION and TOOL RESULT RENDERING for routing and follow-up rules.
                 """,
             "input_schema": [
                 "type": "object",
@@ -275,10 +266,8 @@ struct AgentService {
             "name": "suggestPurchases",
             "description": """
                 Suggest new clothing items the user could buy to fill wardrobe gaps or strengthen \
-                their style. Call this when the user asks what they should buy, what's worth adding, \
-                what would fill a gap, or what new piece would unlock more outfit combinations. \
-                Returns 2–3 specific, purchasable item suggestions ordered by how many owned items \
-                they pair with.
+                their style. Returns 2–3 specific, purchasable item suggestions ordered by how \
+                many owned items they pair with. See system prompt INTENT DETECTION for routing.
                 """,
             "input_schema": [
                 "type": "object",
@@ -298,11 +287,10 @@ struct AgentService {
         [
             "name": "askUserQuestion",
             "description": """
-                Call this whenever you would otherwise list options in prose. If your next \
-                sentence would be "Are you thinking: A, B, or C?" or "Would you prefer X or Y?", \
-                call this tool INSTEAD with those options. Never list choices in text. Provide 2–4 \
-                short, mutually-exclusive options. The UI renders them as tappable buttons with a \
-                built-in "Other" freeform field.
+                Ask the user a multiple-choice question rendered as tappable buttons. Provide 2–4 \
+                short, mutually-exclusive options. Single-shot per turn — calling twice rejects \
+                the second call. See system prompt GUIDELINES for when to call this instead of \
+                listing options in prose.
                 """,
             "input_schema": [
                 "type": "object",

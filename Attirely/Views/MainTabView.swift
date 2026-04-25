@@ -29,7 +29,7 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            Tab("Agent", systemImage: "bubble.left.and.text.bubble.right") {
+            Tab("Athena", systemImage: "bubble.left.and.text.bubble.right") {
                 AgentView(weatherViewModel: weatherViewModel, styleViewModel: styleViewModel)
             }
             Tab("Wardrobe", systemImage: "tshirt") {

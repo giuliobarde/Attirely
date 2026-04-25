@@ -30,6 +30,7 @@ protocol AgentLoopHost: AnyObject {
     // Session-scoped state the loop touches
     func markPendingSeparator(streamingID: UUID)
     func didFinishSending()
+    func pruneOrphanedPendingOutfits()
 }
 
 // Orchestrates the tool-use loop over streamed SSE turns. Owns the API history and
@@ -190,6 +191,8 @@ final class AgentConversationLoop {
 
                 // Reassemble in the model's original call order so UI ordering is stable
                 // and tool_result blocks follow the tool_use sequence on the wire.
+                // askUserQuestion is single-shot per turn — second+ are rejected with an error
+                // tool_result so the model knows to stop rather than silently overwriting.
                 var toolResultBlocks: [[String: Any]] = []
                 var outfits: [Outfit] = []
                 var foundItems: [ClothingItem] = []
@@ -199,6 +202,15 @@ final class AgentConversationLoop {
 
                 for call in toolCalls {
                     guard let outcome = outcomes[call.toolUseID] else { continue }
+
+                    if outcome.question != nil, pendingQuestion != nil {
+                        var rejected = outcome.resultBlock
+                        rejected["content"] = "Error: askUserQuestion can only be called once per turn. The first question is already posted to the user — wait for their reply before asking another."
+                        toolResultBlocks.append(rejected)
+                        AgentTelemetry.recordDuplicateQuestion()
+                        continue
+                    }
+
                     toolResultBlocks.append(outcome.resultBlock)
                     outfits.append(contentsOf: outcome.outfits)
                     foundItems.append(contentsOf: outcome.items)
@@ -260,6 +272,7 @@ final class AgentConversationLoop {
             }
         }
 
+        host.pruneOrphanedPendingOutfits()
         host.didFinishSending()
     }
 
@@ -364,6 +377,7 @@ final class AgentConversationLoop {
             )
         }
         if call.name == .askUserQuestion {
+            AgentTelemetry.recordToolCall(call.name.rawValue)
             let input = AskUserQuestionInput(from: call.inputJSON)
             let question = AgentQuestion(
                 id: streamingID,

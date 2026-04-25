@@ -34,7 +34,7 @@ struct AgentView: View {
                 inputBar
             }
             .animation(.easeInOut(duration: 0.3), value: hasMessages)
-            .navigationTitle("Agent")
+            .navigationTitle("Athena")
             .navigationBarTitleDisplayMode(hasMessages ? .inline : .automatic)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -123,12 +123,12 @@ struct AgentView: View {
                             .font(.system(size: 40))
                             .foregroundStyle(Theme.stone)
 
-                        Text("Style Agent")
+                        Text("Athena")
                             .font(.title3)
                             .fontWeight(.medium)
                             .foregroundStyle(Theme.primaryText)
 
-                        Text("Ask about your wardrobe, get outfit suggestions, or explore your style.")
+                        Text("Your personal stylist. Ask about your wardrobe, get outfit suggestions, or explore your style.")
                             .font(.subheadline)
                             .foregroundStyle(Theme.secondaryText)
                             .multilineTextAlignment(.center)

@@ -60,15 +60,7 @@ struct ContentBlockAccumulator {
     func finishedToolCalls() -> [ToolUseBlock] {
         pendingToolCalls.sorted { $0.key < $1.key }.compactMap { _, pending in
             let fullJSON = pending.jsonChunks.joined()
-            let inputDict: [String: Any]
-            if fullJSON.isEmpty {
-                inputDict = [:]
-            } else if let data = fullJSON.data(using: .utf8),
-                      let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                inputDict = parsed
-            } else {
-                inputDict = [:]
-            }
+            let inputDict = parseToolInputJSON(fullJSON, toolName: pending.name)
             return ToolUseBlock(from: [
                 "id": pending.id,
                 "name": pending.name,
@@ -91,15 +83,7 @@ struct ContentBlockAccumulator {
             }
             if let tool = pendingToolCalls[index] {
                 let fullJSON = tool.jsonChunks.joined()
-                let inputDict: [String: Any]
-                if fullJSON.isEmpty {
-                    inputDict = [:]
-                } else if let data = fullJSON.data(using: .utf8),
-                          let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    inputDict = parsed
-                } else {
-                    inputDict = [:]
-                }
+                let inputDict = parseToolInputJSON(fullJSON, toolName: tool.name)
                 content.append([
                     "type": "tool_use",
                     "id": tool.id,
@@ -111,4 +95,18 @@ struct ContentBlockAccumulator {
 
         return content
     }
+}
+
+// Shared parser for streamed tool-use input JSON. Empty input is a legitimate `{}`
+// (the model emitted no chunks). A non-empty payload that fails to parse is a real bug
+// — log it with telemetry so malformed inputs don't get silently coerced to `{}`.
+@MainActor
+private func parseToolInputJSON(_ raw: String, toolName: String) -> [String: Any] {
+    if raw.isEmpty { return [:] }
+    if let data = raw.data(using: .utf8),
+       let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        return parsed
+    }
+    AgentTelemetry.recordMalformedToolJSON(name: toolName, raw: raw)
+    return [:]
 }
